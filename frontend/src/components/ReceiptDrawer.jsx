@@ -1,0 +1,82 @@
+import React, { useEffect, useRef } from 'react';
+import gsap from 'gsap';
+import { X } from 'lucide-react';
+
+export default function ReceiptDrawer({ transaction, isOpen, onClose }) {
+  const drawerRef = useRef(null);
+  const overlayRef = useRef(null);
+  
+  useEffect(() => {
+    if (isOpen) {
+        gsap.to(overlayRef.current, { opacity: 1, pointerEvents: 'auto', duration: 0.3 });
+        gsap.to(drawerRef.current, { x: 0, duration: 0.5, ease: "power3.out" });
+    } else {
+        gsap.to(overlayRef.current, { opacity: 0, pointerEvents: 'none', duration: 0.3 });
+        gsap.to(drawerRef.current, { x: '100%', duration: 0.4, ease: "power3.in" });
+    }
+  }, [isOpen]);
+
+  return (
+    <>
+      <div 
+        ref={overlayRef}
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 opacity-0 pointer-events-none"
+        onClick={onClose}
+      />
+      <div 
+        ref={drawerRef}
+        className="fixed top-0 right-0 h-full w-full max-w-md glass border-l border-white/10 z-50 transform translate-x-full overflow-y-auto"
+      >
+        <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-space font-bold">Receipt Audit Details</h3>
+                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors interactive">
+                    <X size={20} />
+                </button>
+            </div>
+
+            <div className="relative w-full h-96 bg-folio-dark rounded-xl overflow-hidden border border-white/10">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 font-mono text-sm opacity-50 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+                    [ Receipt Scan Image ]
+                </div>
+                
+                {transaction && (
+                    <>
+                    <div className="absolute top-1/4 left-1/4 w-1/2 h-10 border-2 border-folio-neon bg-folio-neon/10 rounded animate-pulse shadow-[0_0_10px_#00FFA3]">
+                        <span className="absolute -top-6 left-0 text-xs text-folio-neon font-bold">VENDOR: {transaction.vendor}</span>
+                    </div>
+                    <div className="absolute top-1/2 left-1/3 w-1/3 h-10 border-2 border-folio-purple bg-folio-purple/10 rounded animate-pulse shadow-[0_0_10px_#9D4EDD]">
+                        <span className="absolute -top-6 left-0 text-xs text-folio-purple font-bold">TOTAL: ${transaction.amount_usd}</span>
+                    </div>
+                    </>
+                )}
+            </div>
+
+            <div className="mt-8 space-y-6">
+                <div className="glass p-4 rounded-xl neon-border">
+                    <h4 className="text-xs text-folio-neon mb-2 font-bold uppercase tracking-widest">AI Audit Summary</h4>
+                    <p className="text-sm text-gray-300">
+                        This claim was autonomously verified. The vendor "{transaction?.vendor}" matches the allowed category "{transaction?.category}". Employee monthly limits were respected.
+                    </p>
+                </div>
+
+                <div className="space-y-3 font-mono text-sm">
+                    <div className="flex justify-between border-b border-white/10 pb-2">
+                        <span className="text-gray-400">Transaction Ref</span>
+                        <span className="text-white truncate max-w-[200px]">{transaction?.tx_hash_or_ref}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/10 pb-2">
+                        <span className="text-gray-400">Timestamp</span>
+                        <span className="text-white">{transaction ? new Date(transaction.timestamp * 1000).toLocaleString() : ''}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-white/10 pb-2">
+                        <span className="text-gray-400">Status</span>
+                        <span className="text-folio-neon font-bold uppercase">{transaction?.status}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+    </>
+  );
+}

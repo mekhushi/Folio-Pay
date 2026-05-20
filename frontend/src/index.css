@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-outfit: "Outfit", sans-serif;
+  --font-space: "Space Grotesk", sans-serif;
+  
+  --color-folio-brand: #f8fafc; /* Crisp white for brand accents */
+  --color-folio-brand-muted: #94a3b8; /* Slate 400 */
+  --color-folio-accent: #0ea5e9; /* Sky 500 for subtle highlights */
+  --color-folio-bg: #020617; /* Slate 950 - Deepest blue/black */
+  --color-folio-card: #0f172a; /* Slate 900 */
+  --color-folio-border: #1e293b; /* Slate 800 */
+}
+
+@layer utilities {
+  .folio-glow {
+    box-shadow: inset 0 0 100px rgba(14, 165, 233, 0.03);
+  }
+  
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  
+  .animate-marquee {
+    animation: marquee 30s linear infinite;
+  }
+  
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-folio-bg);
+  color: #f8fafc;
+}
