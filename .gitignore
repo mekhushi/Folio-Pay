@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 
 old_root_backup/
+
+# Dynamically generated workspace storage
+backend/rules_*.json
+backend/ledger_*.json

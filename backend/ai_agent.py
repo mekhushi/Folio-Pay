@@ -94,6 +94,16 @@ class FolioAgent:
                     rules["auto_approve_threshold"] = 50.0
                 if "company_name" not in rules:
                     rules["company_name"] = "Folio Pay Inc."
+                if "org_display_name" not in rules:
+                    rules["org_display_name"] = ""
+                if "email" not in rules:
+                    rules["email"] = ""
+                if "description" not in rules:
+                    rules["description"] = ""
+                if "url" not in rules:
+                    rules["url"] = ""
+                if "social_accounts" not in rules:
+                    rules["social_accounts"] = []
                 return rules
         except Exception:
             return {
@@ -101,7 +111,12 @@ class FolioAgent:
                 "monthly_budget": 2000.0,
                 "auto_approve_threshold": 50.0,
                 "allowed_categories": ["Software", "Travel", "Office Supplies", "Meals", "Hardware", "Cloud Infrastructure"],
-                "company_name": "Folio Pay Inc."
+                "company_name": "Folio Pay Inc.",
+                "org_display_name": "",
+                "email": "",
+                "description": "",
+                "url": "",
+                "social_accounts": []
             }
 
     def get_ledger(self) -> list:

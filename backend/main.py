@@ -98,6 +98,11 @@ class RulesUpdate(BaseModel):
     api_keys: Optional[dict] = None
     allowed_categories: Optional[list[str]] = None
     company_name: Optional[str] = None
+    org_display_name: Optional[str] = None
+    email: Optional[str] = None
+    description: Optional[str] = None
+    url: Optional[str] = None
+    social_accounts: Optional[list[str]] = None
 
 @app.post("/api/rules/update")
 def update_rules(rules: RulesUpdate, request: Request):
@@ -116,6 +121,16 @@ def update_rules(rules: RulesUpdate, request: Request):
         current_rules["allowed_categories"] = rules.allowed_categories
     if rules.company_name is not None:
         current_rules["company_name"] = rules.company_name
+    if rules.org_display_name is not None:
+        current_rules["org_display_name"] = rules.org_display_name
+    if rules.email is not None:
+        current_rules["email"] = rules.email
+    if rules.description is not None:
+        current_rules["description"] = rules.description
+    if rules.url is not None:
+        current_rules["url"] = rules.url
+    if rules.social_accounts is not None:
+        current_rules["social_accounts"] = rules.social_accounts
     
     with open(agent.rules_path, "w") as f:
         json.dump(current_rules, f, indent=2)
