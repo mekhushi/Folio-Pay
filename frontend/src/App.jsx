@@ -1,19 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Send, Activity, Box, Sparkles, Receipt, ChevronDown, Plus, LayoutGrid, Clock, User } from 'lucide-react';
+import { Upload, Send, Activity, Box, Sparkles, Receipt, ChevronDown, Plus, LayoutGrid, Clock, User, Shield, LogOut, ArrowLeft } from 'lucide-react';
 import { useCustomCursor } from './hooks/useCustomCursor';
 import AiThoughtStudio from './components/AiThoughtStudio';
 import ReceiptFlip from './components/ReceiptFlip';
 import ReceiptDrawer from './components/ReceiptDrawer';
 import LandingPage from './components/LandingPage';
+import ProfilePage from './components/ProfilePage';
 
 const API_BASE = "http://localhost:8000/api";
 
 function App() {
   const cursorRef = useCustomCursor();
-  const [currentView, setCurrentView] = useState('landing');
-  const [activeTab, setActiveTab] = useState('audit'); // audit | ledger | activity | profile
+  
+  // Workspace Session States
+  const [workspaceId, setWorkspaceId] = useState(sessionStorage.getItem('workspaceId') || '');
+  const [treasuryKey, setTreasuryKey] = useState(sessionStorage.getItem('treasuryKey') || '');
+  const [workspaceAddress, setWorkspaceAddress] = useState(sessionStorage.getItem('workspaceAddress') || '');
+  const [workspaceMode, setWorkspaceMode] = useState(sessionStorage.getItem('workspaceMode') || 'simulation');
+  const [userRole, setUserRole] = useState(sessionStorage.getItem('userRole') || 'employee');
+  const [userName, setUserName] = useState(sessionStorage.getItem('userName') || '');
+
+  const [currentView, setCurrentView] = useState(sessionStorage.getItem('workspaceId') ? 'app' : 'landing');
+  const [activeTab, setActiveTab] = useState('audit'); // audit | ledger | activity | profile | send
   const [balances, setBalances] = useState({ eth: 0, usdc: 0, mode: 'loading' });
   const [ledger, setLedger] = useState([]);
   
@@ -23,6 +33,12 @@ function App() {
   const [file, setFile] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+
+  // Manual Send State
+  const [sendRecipient, setSendRecipient] = useState('');
+  const [sendAmount, setSendAmount] = useState('');
+  const [sendVendor, setSendVendor] = useState('');
+  const [sendCategory, setSendCategory] = useState('Software');
   
   // AI/Stream State
   const [logs, setLogs] = useState([]);
@@ -33,6 +49,17 @@ function App() {
   const [selectedTx, setSelectedTx] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Agent Config State
+  const [rules, setRules] = useState({
+      max_claim_limit: 500,
+      monthly_budget: 2000,
+      llm_engine: 'gemini-1.5-flash',
+      api_keys: { gemini: '' },
+      allowed_categories: [],
+      company_name: 'Folio Pay Inc.'
+  });
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
   const laserRef = useRef(null);
 
   // Flow Coordination: Scroll to top when switching views
@@ -41,24 +68,238 @@ function App() {
   }, [currentView]);
 
   useEffect(() => {
-    fetchBalances();
-    fetchLedger();
-  }, []);
+    if (workspaceId) {
+        fetchBalances();
+        fetchLedger();
+        fetchRules();
+    }
+  }, [workspaceId]);
+
+  const getHeaders = () => {
+    const headers = { 'X-Workspace-Id': workspaceId };
+    if (treasuryKey) {
+        headers['X-Treasury-Key'] = treasuryKey;
+    }
+    return headers;
+  };
 
   const fetchBalances = async () => {
+    if (!workspaceId) return;
     try {
-        const res = await fetch(`${API_BASE}/treasury/balance`);
+        const res = await fetch(`${API_BASE}/treasury/balance`, {
+            headers: getHeaders()
+        });
         const data = await res.json();
         setBalances(data);
     } catch(e) { console.error(e) }
   };
 
   const fetchLedger = async () => {
+    if (!workspaceId) return;
     try {
-        const res = await fetch(`${API_BASE}/ledger`);
+        const res = await fetch(`${API_BASE}/ledger`, {
+            headers: getHeaders()
+        });
         const data = await res.json();
         setLedger(data);
     } catch(e) { console.error(e) }
+  };
+
+  const fetchRules = async () => {
+    if (!workspaceId) return;
+    try {
+        const res = await fetch(`${API_BASE}/rules`, {
+            headers: getHeaders()
+        });
+        const data = await res.json();
+        setRules({
+            max_claim_limit: data.max_claim_limit ?? 500,
+            monthly_budget: data.monthly_budget ?? 2000,
+            llm_engine: data.llm_engine ?? 'gemini-1.5-flash',
+            api_keys: data.api_keys ?? { gemini: '' },
+            allowed_categories: data.allowed_categories ?? [],
+            company_name: data.company_name ?? 'Folio Pay Inc.'
+        });
+    } catch(e) { console.error(e) }
+  };
+
+  const saveConfig = async (updatedRules) => {
+    setIsSavingConfig(true);
+    try {
+        const res = await fetch(`${API_BASE}/rules/update`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...getHeaders()
+            },
+            body: JSON.stringify(updatedRules)
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            setRules(data.rules);
+        }
+    } catch(e) { console.error(e) }
+    finally { setIsSavingConfig(false); }
+  };
+
+  const handleSignIn = (wsId, wsKey, wsAddress, wsMode, wsRules, wsBalances, role, empName) => {
+    sessionStorage.setItem('workspaceId', wsId);
+    sessionStorage.setItem('treasuryKey', wsKey || '');
+    sessionStorage.setItem('workspaceAddress', wsAddress || '');
+    sessionStorage.setItem('workspaceMode', wsMode || 'simulation');
+    sessionStorage.setItem('userRole', role || 'employee');
+    sessionStorage.setItem('userName', empName || '');
+    
+    setWorkspaceId(wsId);
+    setTreasuryKey(wsKey || '');
+    setWorkspaceAddress(wsAddress || '');
+    setWorkspaceMode(wsMode || 'simulation');
+    setUserRole(role || 'employee');
+    setUserName(empName || '');
+    
+    if (role === 'manager') {
+        setActiveTab('send');
+    } else {
+        setActiveTab('audit');
+    }
+    
+    if (wsRules) setRules(wsRules);
+    if (wsBalances) setBalances(wsBalances);
+    setCurrentView('app');
+  };
+
+  const handleSignOut = () => {
+    sessionStorage.clear();
+    setWorkspaceId('');
+    setTreasuryKey('');
+    setWorkspaceAddress('');
+    setWorkspaceMode('simulation');
+    setUserRole('employee');
+    setUserName('');
+    setBalances({ eth: 0, usdc: 0, mode: 'loading' });
+    setLedger([]);
+    setRecipient('');
+    setFile(null);
+    setPreviewUrl(null);
+    setLogs([]);
+    setApprovedTx(null);
+    setSendRecipient('');
+    setSendAmount('');
+    setSendVendor('');
+    setSendCategory('Software');
+    setActiveTab('audit');
+    setCurrentView('landing');
+  };
+
+  useEffect(() => {
+    if (userRole === 'employee' && (activeTab === 'profile' || activeTab === 'send')) {
+        setActiveTab('audit');
+    } else if (userRole === 'manager' && activeTab === 'audit') {
+        setActiveTab('send');
+    }
+  }, [userRole, activeTab]);
+
+  const handleApproveClaim = async (txId) => {
+    if (userRole !== 'manager') return;
+    try {
+        const res = await fetch(`${API_BASE}/claim/approve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getHeaders()
+            },
+            body: JSON.stringify({ tx_id: txId })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            fetchBalances();
+            fetchLedger();
+        } else {
+            alert(data.message || 'Approval failed');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  const handleRejectClaim = async (txId) => {
+    if (userRole !== 'manager') return;
+    try {
+        const res = await fetch(`${API_BASE}/claim/reject`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...getHeaders()
+            },
+            body: JSON.stringify({ tx_id: txId })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            fetchBalances();
+            fetchLedger();
+        } else {
+            alert(data.message || 'Rejection failed');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  const submitManualSend = async (manualRecipient, manualAmount, manualVendor, manualCategory) => {
+    if (!manualRecipient || !manualAmount || !manualVendor) return;
+    setIsScanning(true);
+    setLogs(["System: Initiating secure manual submission stream..."]);
+    setActiveTab('audit');
+    
+    try {
+        const formData = new FormData();
+        formData.append('recipient', manualRecipient);
+        formData.append('category', manualCategory);
+        formData.append('amount', manualAmount);
+        formData.append('vendor', manualVendor);
+
+        const res = await fetch(`${API_BASE}/claim/stream`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: formData
+        });
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let loop = true;
+        
+        while (loop) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n').filter(l => l.trim() !== '');
+            
+            for(let line of lines) {
+                if (line.startsWith("FINISH_RECORD|")) {
+                    const txStr = line.split("FINISH_RECORD|")[1];
+                    const txData = JSON.parse(txStr);
+                    setApprovedTx(txData);
+                    setShowFlip(true);
+                    
+                    setSendRecipient('');
+                    setSendAmount('');
+                    setSendVendor('');
+                    setSendCategory('Software');
+                    
+                    fetchBalances();
+                    fetchLedger();
+                    loop = false;
+                } else {
+                    setLogs(prev => [...prev, line]);
+                }
+            }
+        }
+    } catch (e) {
+        setLogs(prev => [...prev, `System: Error - ${e.message}`]);
+    } finally {
+        setIsScanning(false);
+    }
   };
 
   const handleFileDrop = (e) => {
@@ -88,6 +329,7 @@ function App() {
 
         const res = await fetch(`${API_BASE}/claim/stream`, {
             method: 'POST',
+            headers: getHeaders(),
             body: formData
         });
 
@@ -144,7 +386,7 @@ function App() {
     <div className="min-h-screen bg-folio-bg folio-glow relative text-zinc-300 font-outfit overflow-hidden">
       <AnimatePresence mode="wait">
           {currentView === 'landing' ? (
-              <LandingPage key="landing" onEnter={() => setCurrentView('app')} />
+              <LandingPage key="landing" onEnter={handleSignIn} />
           ) : (
               <motion.div 
                   key="app"
@@ -155,23 +397,34 @@ function App() {
               >
                   {/* Top Header */}
                   <div className="w-full max-w-5xl px-6 py-8 flex justify-between items-center mb-4">
-                      {/* Logo */}
-                      <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full border border-folio-brand flex items-center justify-center">
-                              <div className="w-4 h-4 bg-folio-brand rounded-full" />
+                      {/* Logo and Back Button */}
+                      <div className="flex items-center gap-4">
+                          <button 
+                              onClick={handleSignOut}
+                              className="flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-white transition-colors bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 px-3 py-1.5 rounded-lg shadow-sm cursor-pointer"
+                              title="Sign out & go back to home screen"
+                          >
+                              <ArrowLeft size={14} /> Back
+                          </button>
+                          <div className="flex items-center gap-3">
+                               <img src="/logo.png" className="w-8 h-8 object-contain invert brightness-200" alt="Folio Pay Logo" />
+                              <h1 className="text-xl font-space font-bold tracking-widest text-folio-brand">
+                                  FOLIO<br/><span className="text-[10px] tracking-[0.3em] font-normal text-folio-brand-muted leading-none block -mt-1">PAY</span>
+                              </h1>
                           </div>
-                          <h1 className="text-xl font-space font-bold tracking-widest text-folio-brand">
-                              FOLIO<br/><span className="text-[10px] tracking-[0.3em] font-normal text-folio-brand-muted leading-none block -mt-1">PAY</span>
-                          </h1>
                       </div>
 
-                      {/* Network / Wallet Dropdown */}
+                      {/* Network / Wallet Dropdown & Disconnect */}
                       <div className="flex items-center gap-3">
                           <button className="bg-folio-card border border-folio-border text-white text-sm font-medium px-4 py-2 rounded-full flex items-center gap-2 hover:bg-slate-800 transition-colors">
                               <div className="w-3 h-3 bg-blue-500 rounded-full" /> Base Sepolia <span className="text-slate-400 text-xs ml-1">(ETH)</span> <ChevronDown size={14} className="text-slate-400" />
                           </button>
-                          <button className="bg-folio-brand text-folio-bg p-2 rounded-lg hover:opacity-90 transition-opacity">
-                              <LayoutGrid size={20} />
+                          <button 
+                              onClick={handleSignOut}
+                              className="bg-red-500/10 border border-red-500/20 text-red-400 hover:text-white hover:bg-red-500 hover:border-red-500 p-2.5 rounded-lg transition-all"
+                              title="Disconnect Session"
+                          >
+                              <LogOut size={20} />
                           </button>
                       </div>
                   </div>
@@ -181,7 +434,13 @@ function App() {
                       
                       {/* Navigation Tabs (Square Buttons) */}
                       <div className="flex justify-center gap-3 mb-8 w-full overflow-x-auto hide-scrollbar py-2">
-                          {tabs.map((tab) => {
+                          {tabs.filter(tab => {
+                              if (userRole === 'manager') {
+                                  return tab.id !== 'audit';
+                              } else {
+                                  return tab.id !== 'send' && tab.id !== 'profile';
+                              }
+                          }).map((tab) => {
                               const isActive = activeTab === tab.id;
                               const Icon = tab.icon;
                               return (
@@ -198,8 +457,12 @@ function App() {
                       </div>
 
                       {/* Top Message Box */}
-                      <div className="w-full bg-folio-accent/10 border border-folio-accent/20 rounded-lg py-4 mb-8 text-center text-folio-accent font-medium text-sm">
-                          Autonomous treasury powered by Agentic AI
+                      <div className="w-full bg-folio-accent/10 border border-folio-border rounded-lg py-4 mb-8 px-6 flex justify-between items-center text-folio-accent font-medium text-sm">
+                          <span>Autonomous treasury powered by Agentic AI</span>
+                          <span className="font-mono text-[11px] opacity-90 border-l border-folio-accent/30 pl-4 whitespace-nowrap flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full ${userRole === 'manager' ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]' : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'}`} />
+                              {userRole === 'manager' ? 'MANAGER PORTAL' : `EMPLOYEE: ${userName || 'Employee'}`}
+                          </span>
                       </div>
 
                       {/* Tab Content */}
@@ -288,7 +551,7 @@ function App() {
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="space-y-4"
+                                      className="space-y-4 max-h-[500px] overflow-y-auto pr-1"
                                   >
                                       {ledger.length === 0 ? (
                                           <div className="text-center py-12 text-slate-500">No historic ledger activity.</div>
@@ -297,21 +560,42 @@ function App() {
                                               <div 
                                                 key={idx} 
                                                 onClick={() => { setSelectedTx(tx); setIsDrawerOpen(true); }}
-                                                className="w-full bg-folio-card border border-folio-border rounded-lg p-4 flex items-center justify-between hover:border-slate-500 transition-colors cursor-pointer group"
+                                                className="w-full bg-folio-card border border-folio-border rounded-xl p-4 hover:border-slate-550 transition-colors cursor-pointer group flex flex-col gap-3"
                                               >
-                                                  <div className="flex items-center gap-4">
-                                                      <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-folio-brand">
-                                                          <Activity size={18} />
+                                                  <div className="flex items-center justify-between">
+                                                      <div className="flex items-center gap-4">
+                                                          <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-folio-brand">
+                                                              <Activity size={18} />
+                                                          </div>
+                                                          <div>
+                                                              <h4 className="text-white font-medium group-hover:text-folio-accent transition-colors">{tx.vendor}</h4>
+                                                              <p className="text-xs text-slate-400 font-mono mt-1">{tx.recipient}</p>
+                                                          </div>
                                                       </div>
-                                                      <div>
-                                                          <h4 className="text-white font-medium group-hover:text-folio-accent transition-colors">{tx.vendor}</h4>
-                                                          <p className="text-xs text-slate-400 font-mono mt-1">{tx.recipient}</p>
+                                                      <div className="text-right">
+                                                          <h4 className="text-white font-medium">${tx.amount_usd}</h4>
+                                                          <p className={`text-xs mt-1 font-bold uppercase ${tx.status === 'APPROVED' ? 'text-emerald-400' : tx.status === 'PENDING_REVIEW' ? 'text-amber-400' : tx.status === 'REJECTED' ? 'text-red-400' : 'text-slate-500'}`}>
+                                                              {tx.status}
+                                                          </p>
                                                       </div>
                                                   </div>
-                                                  <div className="text-right">
-                                                      <h4 className="text-white font-medium">${tx.amount_usd}</h4>
-                                                      <p className={`text-xs mt-1 ${tx.status === 'APPROVED' ? 'text-emerald-500' : 'text-slate-500'}`}>{tx.status}</p>
-                                                  </div>
+                                                  
+                                                  {tx.status === 'PENDING_REVIEW' && userRole === 'manager' && (
+                                                      <div className="flex gap-2.5 pt-3 border-t border-slate-800/85" onClick={e => e.stopPropagation()}>
+                                                          <button 
+                                                              onClick={() => handleApproveClaim(tx.tx_id)}
+                                                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-md transition-colors"
+                                                          >
+                                                              Approve
+                                                          </button>
+                                                          <button 
+                                                              onClick={() => handleRejectClaim(tx.tx_id)}
+                                                              className="flex-1 py-1.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 hover:border-red-500/40 font-bold text-xs rounded-md transition-colors"
+                                                          >
+                                                              Reject
+                                                          </button>
+                                                      </div>
+                                                  )}
                                               </div>
                                           ))
                                       )}
@@ -324,91 +608,169 @@ function App() {
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
+                                      className="w-full"
+                                  >
+                                      <ProfilePage 
+                                          rules={rules}
+                                          balances={balances}
+                                          ledger={ledger}
+                                          saveConfig={saveConfig}
+                                          isSavingConfig={isSavingConfig}
+                                          workspaceId={workspaceId}
+                                          handleSignOut={handleSignOut}
+                                      />
+                                  </motion.div>
+                              )}
+
+                              {activeTab === 'send' && (
+                                  <motion.div 
+                                      key="send"
+                                      initial={{ opacity: 0, y: 10 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      exit={{ opacity: 0, y: -10 }}
                                       className="space-y-6"
                                   >
-                                      {/* Workspace Profile */}
-                                      <div className="bg-folio-card border border-folio-border rounded-xl p-6 relative overflow-hidden">
-                                          <div className="absolute top-0 right-0 w-32 h-32 bg-folio-brand rounded-full blur-[80px] opacity-10 pointer-events-none" />
-                                          <div className="flex items-center gap-4 mb-6 relative z-10">
-                                              <div className="w-16 h-16 bg-gradient-to-br from-[#0ea5e9] to-[#0284c7] rounded-full flex items-center justify-center text-white text-xl font-bold shadow-[0_0_20px_rgba(14,165,233,0.3)]">
-                                                  FP
-                                              </div>
-                                              <div>
-                                                  <h3 className="text-xl font-bold text-white font-space tracking-wide">Folio Pay Inc.</h3>
-                                                  <p className="text-sm text-slate-400 font-mono">Workspace ID: wrk_9921a</p>
-                                              </div>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-2 gap-4 relative z-10">
-                                              <div className="bg-[#050505] rounded-lg p-4 border border-slate-800">
-                                                  <span className="text-xs text-slate-500 block mb-1">Treasury Wallet</span>
-                                                  <span className="text-sm text-folio-brand font-mono">0x8F9a...3a2B</span>
-                                              </div>
-                                              <div className="bg-[#050505] rounded-lg p-4 border border-slate-800">
-                                                  <span className="text-xs text-slate-500 block mb-1">Network</span>
-                                                  <span className="text-sm text-emerald-400 font-mono">Base Sepolia</span>
-                                              </div>
+                                      {/* Merchant / Vendor Name */}
+                                      <div>
+                                          <h3 className="text-white font-medium mb-3">Merchant / Vendor Name</h3>
+                                          <input 
+                                              type="text" 
+                                              value={sendVendor}
+                                              onChange={e => setSendVendor(e.target.value)}
+                                              className="w-full bg-folio-card border border-folio-border rounded-lg px-4 py-4 text-white placeholder-slate-500 focus:outline-none focus:border-folio-brand transition-colors"
+                                              placeholder="e.g. Vercel Inc."
+                                          />
+                                      </div>
+
+                                      {/* Amount (USD) */}
+                                      <div>
+                                          <h3 className="text-white font-medium mb-3">Amount (USD)</h3>
+                                          <input 
+                                              type="number" 
+                                              value={sendAmount}
+                                              onChange={e => setSendAmount(e.target.value)}
+                                              className="w-full bg-folio-card border border-folio-border rounded-lg px-4 py-4 text-white placeholder-slate-500 focus:outline-none focus:border-folio-brand transition-colors font-mono"
+                                              placeholder="e.g. 45.00"
+                                          />
+                                      </div>
+
+                                      {/* Pay To (Recipient) */}
+                                      <div>
+                                          <h3 className="text-white font-medium mb-3">Pay To</h3>
+                                          <input 
+                                              type="text" 
+                                              value={sendRecipient}
+                                              onChange={e => setSendRecipient(e.target.value)}
+                                              className="w-full bg-folio-card border border-folio-border rounded-lg px-4 py-4 text-white placeholder-slate-500 focus:outline-none focus:border-folio-brand transition-colors font-mono"
+                                              placeholder="0x... or @upi"
+                                          />
+                                      </div>
+
+                                      {/* Category */}
+                                      <div>
+                                          <h3 className="text-white font-medium mb-3">Category</h3>
+                                          <div className="relative">
+                                              <select 
+                                                  value={sendCategory}
+                                                  onChange={e => setSendCategory(e.target.value)}
+                                                  className="w-full bg-folio-card border border-folio-border rounded-lg px-4 py-4 text-white appearance-none focus:outline-none focus:border-folio-brand transition-colors"
+                                              >
+                                                  <option>Software</option>
+                                                  <option>Travel</option>
+                                                  <option>Hardware</option>
+                                                  <option>Meals</option>
+                                                  <option>Office Supplies</option>
+                                                  <option>Cloud Infrastructure</option>
+                                              </select>
+                                              <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                                           </div>
                                       </div>
 
-                                      {/* Agent Settings */}
-                                      <div className="bg-folio-card border border-folio-border rounded-xl p-6">
-                                          <h4 className="text-white font-medium mb-6 flex items-center gap-2"><Sparkles size={16} className="text-folio-brand" /> Agentic Configuration</h4>
-                                          
-                                          <div className="space-y-5">
-                                              <div className="flex justify-between items-center border-b border-slate-800/50 pb-5">
-                                                  <div>
-                                                      <span className="text-sm text-white block mb-0.5">LLM Engine</span>
-                                                      <span className="text-xs text-slate-500">The model powering receipt OCR & decisions.</span>
-                                                  </div>
-                                                  <span className="text-xs font-mono bg-slate-800 text-slate-300 px-3 py-1 rounded">Gemini 1.5 Flash</span>
-                                              </div>
-                                              
-                                              <div className="flex justify-between items-center border-b border-slate-800/50 pb-5">
-                                                  <div>
-                                                      <span className="text-sm text-white block mb-0.5">Auto-Approval Threshold</span>
-                                                      <span className="text-xs text-slate-500">Claims below this amount skip manual review.</span>
-                                                  </div>
-                                                  <span className="text-sm font-mono text-emerald-400">$500.00</span>
-                                              </div>
-
-                                              <div className="flex justify-between items-center pt-1">
-                                                  <div>
-                                                      <span className="text-sm text-white block mb-0.5">API Keys</span>
-                                                      <span className="text-xs text-slate-500">Manage Gemini and Web3 RPC keys.</span>
-                                                  </div>
-                                                  <button className="text-xs font-medium text-folio-brand hover:text-white transition-colors">Manage Keys &rarr;</button>
-                                              </div>
-                                          </div>
-                                      </div>
-                                      
-                                      <button className="w-full py-4 rounded-lg font-space font-bold text-sm tracking-widest uppercase transition-all bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20">
-                                          Sign Out
+                                      {/* Send Request Button */}
+                                      <button 
+                                          onClick={() => submitManualSend(sendRecipient, sendAmount, sendVendor, sendCategory)}
+                                          disabled={isScanning || !sendRecipient || !sendAmount || !sendVendor}
+                                          className={`w-full py-4 rounded-lg font-space font-bold text-lg tracking-wide transition-all mt-4 ${isScanning ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-folio-brand hover:bg-folio-brand/90 text-folio-bg'}`}
+                                      >
+                                          {isScanning ? 'PROCESSING STREAM...' : 'SEND PAYMENT'}
                                       </button>
                                   </motion.div>
                               )}
 
-                              {['send', 'activity'].includes(activeTab) && (
-                                  <motion.div
-                                      key={activeTab}
+                              {activeTab === 'activity' && (
+                                  <motion.div 
+                                      key="activity"
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="w-full h-64 bg-folio-card border border-folio-border border-dashed rounded-xl flex flex-col items-center justify-center text-slate-500"
+                                      className="space-y-6 max-h-[500px] overflow-y-auto pr-2 relative"
                                   >
-                                      <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center mb-4 text-folio-brand border border-slate-800 shadow-inner">
-                                          <Sparkles size={20} />
-                                      </div>
-                                      <h3 className="text-white font-medium text-lg mb-2 capitalize">{activeTab} Module</h3>
-                                      <p className="text-sm font-mono opacity-60">Agentic integration currently in training.</p>
+                                      {ledger.length === 0 ? (
+                                          <div className="text-center py-12 text-slate-500">No recent activity.</div>
+                                      ) : (
+                                          <div className="relative border-l border-slate-800 ml-4 pl-6 space-y-6">
+                                              {ledger.map((tx, idx) => {
+                                                  const isApproved = tx.status === 'APPROVED';
+                                                  const isPending = tx.status === 'PENDING_REVIEW';
+                                                  const isRejected = tx.status === 'REJECTED';
+                                                  
+                                                  let dotColor = "bg-slate-700";
+                                                  let shadowColor = "";
+                                                  let textColor = "text-slate-400";
+                                                  
+                                                  if (isApproved) {
+                                                      dotColor = "bg-emerald-500";
+                                                      shadowColor = "shadow-[0_0_10px_#10b981]";
+                                                      textColor = "text-emerald-400";
+                                                  } else if (isPending) {
+                                                      dotColor = "bg-amber-500";
+                                                      shadowColor = "shadow-[0_0_10px_#f59e0b]";
+                                                      textColor = "text-amber-400";
+                                                  } else if (isRejected) {
+                                                      dotColor = "bg-red-500";
+                                                      shadowColor = "shadow-[0_0_10px_#ef4444]";
+                                                      textColor = "text-red-400";
+                                                  }
+                                                  
+                                                  return (
+                                                      <div key={idx} className="relative group">
+                                                          {/* Timeline Dot */}
+                                                          <div className={`absolute -left-[31px] top-1.5 w-4.5 h-4.5 rounded-full ${dotColor} ${shadowColor} border-4 border-folio-bg z-10 transition-all duration-300`} />
+                                                          
+                                                          {/* Timeline Item Content Card */}
+                                                          <div className="bg-folio-card border border-folio-border rounded-xl p-4 hover:border-slate-700 transition-colors">
+                                                              <div className="flex justify-between items-start">
+                                                                  <div>
+                                                                      <span className="text-[10px] font-mono text-slate-550">{tx.timestamp}</span>
+                                                                      <h4 className="text-sm font-semibold text-white mt-0.5">{tx.vendor}</h4>
+                                                                      <p className="text-[11px] text-slate-400 font-mono mt-0.5">{tx.recipient}</p>
+                                                                  </div>
+                                                                  <div className="text-right">
+                                                                      <span className="text-sm font-bold text-white">${tx.amount_usd}</span>
+                                                                      <div className={`text-[10px] font-bold uppercase mt-1 ${textColor}`}>
+                                                                          {tx.status}
+                                                                      </div>
+                                                                  </div>
+                                                              </div>
+                                                              
+                                                              <div className="mt-3 pt-2.5 border-t border-slate-800/60 text-xs text-slate-400 font-outfit leading-relaxed">
+                                                                  {isApproved && `Autonomous check passed. Settle transaction hash: ${tx.tx_hash_or_ref || 'N/A'}`}
+                                                                  {isPending && `Verification limit exceeded. Sent to manager approval queue.`}
+                                                                  {isRejected && `Policy rejection. Failed rules check.`}
+                                                              </div>
+                                                          </div>
+                                                      </div>
+                                                  );
+                                              })}
+                                          </div>
+                                      )}
                                   </motion.div>
                               )}
                           </AnimatePresence>
                       </div>
-
                       {/* Bottom AI Panels (Like NLP Copilot / Dashboard) */}
-                      {activeTab === 'audit' && (
-                        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-12">
+                      {(activeTab === 'audit' || (activeTab === 'send' && userRole === 'manager')) ? (
+                        <div className={`w-full grid gap-4 mt-12 ${userRole === 'manager' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
                             <div className="bg-folio-card border border-folio-border rounded-xl p-5 relative overflow-hidden">
                                 <div className="flex items-center gap-2 mb-4 text-sm font-medium text-white">
                                     <Sparkles size={16} className="text-folio-accent" /> AI Agent Activity
@@ -417,29 +779,31 @@ function App() {
                                     {logs.length > 0 ? logs.map((l, i) => (
                                         <div key={i} className="mb-2 opacity-80 leading-relaxed">{l}</div>
                                     )) : (
-                                        <div className="text-slate-600 italic">Awaiting input...</div>
+                                        <div className="text-slate-650 italic">Awaiting input...</div>
                                     )}
                                 </div>
                             </div>
                             
-                            <div className="bg-folio-card border border-folio-border rounded-xl p-5">
-                                <div className="flex justify-between items-center mb-4 text-sm font-medium text-white">
-                                    <span className="flex items-center gap-2"><Activity size={16} className="text-folio-accent" /> Treasury Stats</span>
-                                    <button className="text-xs text-slate-500 hover:text-white">Refresh</button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-folio-bg border border-folio-border rounded-lg p-3">
-                                        <p className="text-xs text-slate-400 mb-1">USDC Vault</p>
-                                        <p className="text-lg font-medium text-white">${balances.usdc.toFixed(2)}</p>
+                            {userRole === 'manager' ? (
+                                <div className="bg-folio-card border border-folio-border rounded-xl p-5">
+                                    <div className="flex justify-between items-center mb-4 text-sm font-medium text-white">
+                                        <span className="flex items-center gap-2"><Activity size={16} className="text-folio-accent" /> Treasury Stats</span>
+                                        <button onClick={fetchBalances} className="text-xs text-slate-500 hover:text-white">Refresh</button>
                                     </div>
-                                    <div className="bg-folio-bg border border-folio-border rounded-lg p-3">
-                                        <p className="text-xs text-slate-400 mb-1">Network ETH</p>
-                                        <p className="text-lg font-medium text-white">{balances.eth.toFixed(4)}</p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-folio-bg border border-folio-border rounded-lg p-3 flex flex-col justify-center items-center h-20">
+                                            <p className="text-xs text-slate-400 mb-1">USDC Vault</p>
+                                            <p className="text-lg font-medium text-white">${balances.usdc.toFixed(2)}</p>
+                                        </div>
+                                        <div className="bg-folio-bg border border-folio-border rounded-lg p-3 flex flex-col justify-center items-center h-20">
+                                            <p className="text-xs text-slate-400 mb-1">Network ETH</p>
+                                            <p className="text-lg font-medium text-white">{balances.eth.toFixed(4)}</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            ) : null}
                         </div>
-                      )}
+                      ) : null}
                       
                   </div>
               </motion.div>
@@ -450,7 +814,14 @@ function App() {
       {showFlip && approvedTx && (
         <ReceiptFlip transaction={approvedTx} onClose={() => setShowFlip(false)} />
       )}
-      <ReceiptDrawer isOpen={isDrawerOpen} transaction={selectedTx} onClose={() => setIsDrawerOpen(false)} />
+      <ReceiptDrawer 
+          isOpen={isDrawerOpen} 
+          transaction={selectedTx} 
+          onClose={() => setIsDrawerOpen(false)} 
+          userRole={userRole}
+          onApprove={handleApproveClaim}
+          onReject={handleRejectClaim}
+      />
     </div>
   );
 }

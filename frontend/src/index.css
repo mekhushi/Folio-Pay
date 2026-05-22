@@ -3,6 +3,7 @@
 @theme {
   --font-outfit: "Outfit", sans-serif;
   --font-space: "Space Grotesk", sans-serif;
+  --font-mono: "Outfit", sans-serif;
   
   --color-folio-brand: #f8fafc; /* Crisp white for brand accents */
   --color-folio-brand-muted: #94a3b8; /* Slate 400 */
@@ -43,4 +44,8 @@ body {
   margin: 0;
   background-color: var(--color-folio-bg);
   color: #f8fafc;
+}
+
+input, button, select, textarea {
+  font-family: inherit;
 }

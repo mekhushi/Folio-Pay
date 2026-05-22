@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { X } from 'lucide-react';
 
-export default function ReceiptDrawer({ transaction, isOpen, onClose }) {
+export default function ReceiptDrawer({ transaction, isOpen, onClose, userRole, onApprove, onReject }) {
   const drawerRef = useRef(null);
   const overlayRef = useRef(null);
   
@@ -15,6 +15,13 @@ export default function ReceiptDrawer({ transaction, isOpen, onClose }) {
         gsap.to(drawerRef.current, { x: '100%', duration: 0.4, ease: "power3.in" });
     }
   }, [isOpen]);
+
+  const getStatusColor = (status) => {
+    if (status === 'APPROVED') return 'text-emerald-400';
+    if (status === 'PENDING_REVIEW') return 'text-amber-400';
+    if (status === 'REJECTED') return 'text-red-400';
+    return 'text-slate-400';
+  };
 
   return (
     <>
@@ -56,25 +63,51 @@ export default function ReceiptDrawer({ transaction, isOpen, onClose }) {
                 <div className="glass p-4 rounded-xl neon-border">
                     <h4 className="text-xs text-folio-neon mb-2 font-bold uppercase tracking-widest">AI Audit Summary</h4>
                     <p className="text-sm text-gray-300">
-                        This claim was autonomously verified. The vendor "{transaction?.vendor}" matches the allowed category "{transaction?.category}". Employee monthly limits were respected.
+                        {transaction?.status === 'PENDING_REVIEW' 
+                          ? `This claim requires Manager review because it exceeds the Auto-Approval Limit. Current amount is $${transaction?.amount_usd}.`
+                          : `This claim was autonomously verified. The vendor "${transaction?.vendor}" matches the allowed category "${transaction?.category}". Employee monthly limits were respected.`
+                        }
                     </p>
                 </div>
 
                 <div className="space-y-3 font-mono text-sm">
                     <div className="flex justify-between border-b border-white/10 pb-2">
                         <span className="text-gray-400">Transaction Ref</span>
-                        <span className="text-white truncate max-w-[200px]">{transaction?.tx_hash_or_ref}</span>
+                        <span className="text-white truncate max-w-[200px]">{transaction?.tx_hash_or_ref || 'N/A'}</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 pb-2">
                         <span className="text-gray-400">Timestamp</span>
-                        <span className="text-white">{transaction ? new Date(transaction.timestamp * 1000).toLocaleString() : ''}</span>
+                        <span className="text-white">{transaction?.timestamp || 'N/A'}</span>
                     </div>
                     <div className="flex justify-between border-b border-white/10 pb-2">
                         <span className="text-gray-400">Status</span>
-                        <span className="text-folio-neon font-bold uppercase">{transaction?.status}</span>
+                        <span className={`font-bold uppercase ${getStatusColor(transaction?.status)}`}>{transaction?.status}</span>
                     </div>
                 </div>
             </div>
+
+            {transaction?.status === 'PENDING_REVIEW' && userRole === 'manager' && (
+                <div className="mt-8 flex gap-4">
+                    <button 
+                        onClick={() => {
+                            onApprove(transaction.tx_id);
+                            onClose();
+                        }}
+                        className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-space font-bold rounded-lg shadow-lg hover:shadow-emerald-500/20 transition-all text-xs uppercase"
+                    >
+                        Approve (Execute)
+                    </button>
+                    <button 
+                        onClick={() => {
+                            onReject(transaction.tx_id);
+                            onClose();
+                        }}
+                        className="flex-1 py-3 bg-red-650/10 hover:bg-red-650/20 text-red-500 font-space font-bold border border-red-500/20 hover:border-red-500/40 rounded-lg transition-all text-xs uppercase"
+                    >
+                        Reject Claim
+                    </button>
+                </div>
+            )}
         </div>
       </div>
     </>
