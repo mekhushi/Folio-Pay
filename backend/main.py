@@ -1,8 +1,10 @@
 import os
 import json
+import uuid
 from fastapi import FastAPI, Form, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
@@ -10,6 +12,11 @@ from ai_agent import FolioAgent
 from treasury import TreasuryManager
 
 app = FastAPI(title="Folio Pay API")
+
+# Ensure uploads directory exists and mount static route
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/api/receipts", StaticFiles(directory=UPLOADS_DIR), name="receipts")
 
 # Configure CORS so the React frontend running on another port can communicate with the backend
 app.add_middleware(
@@ -57,6 +64,7 @@ def get_rules(request: Request):
 
 class LoginRequest(BaseModel):
     workspace_id: str
+    role: Optional[str] = None
     private_key: Optional[str] = None
     gemini_key: Optional[str] = None
 
@@ -77,7 +85,7 @@ def login(req: LoginRequest):
             agent.reload_config()
             
         balances = agent.treasury.get_balances()
-        role = "manager" if req.private_key else "employee"
+        role = req.role if req.role in ["manager", "employee"] else ("manager" if req.private_key else "employee")
         return {
             "status": "success",
             "workspace_id": workspace_id,
@@ -222,9 +230,20 @@ async def claim_stream(request: Request):
     
     file_bytes = None
     mime_type = None
+    receipt_url = None
     if receipt_file and hasattr(receipt_file, "file"):
         file_bytes = await receipt_file.read()
         mime_type = receipt_file.content_type
+        try:
+            original_filename = getattr(receipt_file, "filename", "receipt.png")
+            extension = os.path.splitext(original_filename)[1] or ".png"
+            saved_name = f"{uuid.uuid4().hex}{extension}"
+            file_path = os.path.join(UPLOADS_DIR, saved_name)
+            with open(file_path, "wb") as f:
+                f.write(file_bytes)
+            receipt_url = f"/api/receipts/{saved_name}"
+        except Exception as err:
+            print(f"[Upload] Could not save receipt file: {err}")
         
     return StreamingResponse(
         agent.audit_claim_stream(
@@ -233,7 +252,8 @@ async def claim_stream(request: Request):
             str(recipient), 
             str(category), 
             manual_amount, 
-            manual_vendor
+            manual_vendor,
+            receipt_url
         ), 
         media_type="text/event-stream"
     )

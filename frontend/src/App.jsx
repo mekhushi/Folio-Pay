@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Send, Activity, Box, Sparkles, Receipt, ChevronDown, Plus, LayoutGrid, Clock, User, Shield, LogOut, ArrowLeft } from 'lucide-react';
+import { 
+  Upload, Send, Activity, Box, Sparkles, Receipt, ChevronDown, Plus, 
+  LayoutGrid, Clock, User, Shield, LogOut, ArrowLeft, Download,
+  ShieldAlert, CheckCircle2, Sliders, AlertTriangle, Check, X, FileText
+} from 'lucide-react';
 import { useCustomCursor } from './hooks/useCustomCursor';
 import AiThoughtStudio from './components/AiThoughtStudio';
 import ReceiptFlip from './components/ReceiptFlip';
@@ -23,9 +27,12 @@ function App() {
   const [userName, setUserName] = useState(sessionStorage.getItem('userName') || '');
 
   const [currentView, setCurrentView] = useState(sessionStorage.getItem('workspaceId') ? 'app' : 'landing');
-  const [activeTab, setActiveTab] = useState('audit'); // audit | ledger | activity | profile | send
+  const [activeTab, setActiveTab] = useState('audit'); // audit | ledger | activity | profile | send | approvals
   const [balances, setBalances] = useState({ eth: 0, usdc: 0, mode: 'loading' });
   const [ledger, setLedger] = useState([]);
+  const [ledgerFilter, setLedgerFilter] = useState('all'); // all | pending | approved
+  const [auditError, setAuditError] = useState(null);
+  const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
   
   // Form State
   const [recipient, setRecipient] = useState('');
@@ -158,7 +165,7 @@ function App() {
     setUserName(empName || '');
     
     if (role === 'manager') {
-        setActiveTab('send');
+        setActiveTab('approvals');
     } else {
         setActiveTab('audit');
     }
@@ -192,12 +199,36 @@ function App() {
   };
 
   useEffect(() => {
-    if (userRole === 'employee' && (activeTab === 'profile' || activeTab === 'send')) {
+    if (userRole === 'employee' && (activeTab === 'profile' || activeTab === 'send' || activeTab === 'approvals')) {
         setActiveTab('audit');
     } else if (userRole === 'manager' && activeTab === 'audit') {
-        setActiveTab('send');
+        setActiveTab('approvals');
     }
   }, [userRole, activeTab]);
+
+  const exportLedgerToCSV = () => {
+    if (!ledger || ledger.length === 0) return;
+    const headers = ["Transaction ID", "Date", "Vendor", "Category", "Recipient", "Amount USD", "Status", "Reference / Hash", "Explorer Link"];
+    const rows = ledger.map(tx => [
+      `"${tx.tx_id || ''}"`,
+      `"${tx.timestamp || ''}"`,
+      `"${tx.vendor || ''}"`,
+      `"${tx.category || ''}"`,
+      `"${tx.recipient || ''}"`,
+      tx.amount_usd || 0,
+      `"${tx.status || ''}"`,
+      `"${tx.tx_hash_or_ref || ''}"`,
+      `"${tx.explorer_link || ''}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `folio_pay_ledger_${workspaceId || 'export'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleApproveClaim = async (txId) => {
     if (userRole !== 'manager') return;
@@ -214,6 +245,10 @@ function App() {
         if (data.status === 'success') {
             fetchBalances();
             fetchLedger();
+            if (data.transaction) {
+                setApprovedTx(data.transaction);
+                setShowFlip(true);
+            }
         } else {
             alert(data.message || 'Approval failed');
         }
@@ -248,8 +283,8 @@ function App() {
   const submitManualSend = async (manualRecipient, manualAmount, manualVendor, manualCategory) => {
     if (!manualRecipient || !manualAmount || !manualVendor) return;
     setIsScanning(true);
+    setAuditError(null);
     setLogs(["System: Initiating secure manual submission stream..."]);
-    setActiveTab('audit');
     
     try {
         const formData = new FormData();
@@ -281,6 +316,7 @@ function App() {
                     const txData = JSON.parse(txStr);
                     setApprovedTx(txData);
                     setShowFlip(true);
+                    setAuditError(null);
                     
                     setSendRecipient('');
                     setSendAmount('');
@@ -289,6 +325,15 @@ function App() {
                     
                     fetchBalances();
                     fetchLedger();
+                    loop = false;
+                } else if (line.startsWith("AUDIT_FAILED|")) {
+                    const failStr = line.split("AUDIT_FAILED|")[1];
+                    try {
+                        const failData = JSON.parse(failStr);
+                        setAuditError(failData.reason || "Payout request failed governance policies.");
+                    } catch(err) {
+                        setAuditError("Payout request was rejected by compliance auditor.");
+                    }
                     loop = false;
                 } else {
                     setLogs(prev => [...prev, line]);
@@ -308,12 +353,14 @@ function App() {
     if (f) {
         setFile(f);
         setPreviewUrl(URL.createObjectURL(f));
+        setAuditError(null);
     }
   };
 
   const submitClaim = async () => {
     if (!file || !recipient) return;
     setIsScanning(true);
+    setAuditError(null);
     setLogs(["System: Initiating secure upload connection..."]);
     
     if(laserRef.current) {
@@ -350,8 +397,18 @@ function App() {
                     const txData = JSON.parse(txStr);
                     setApprovedTx(txData);
                     setShowFlip(true);
+                    setAuditError(null);
                     fetchBalances();
                     fetchLedger();
+                    loop = false;
+                } else if (line.startsWith("AUDIT_FAILED|")) {
+                    const failStr = line.split("AUDIT_FAILED|")[1];
+                    try {
+                        const failData = JSON.parse(failStr);
+                        setAuditError(failData.reason || "Expense claim failed governance checks.");
+                    } catch(err) {
+                        setAuditError("Expense claim was rejected by compliance auditor.");
+                    }
                     loop = false;
                 } else {
                     setLogs(prev => [...prev, line]);
@@ -374,13 +431,37 @@ function App() {
       visible: { opacity: 1, transition: { duration: 0.6 } }
   };
 
-  const tabs = [
-      { id: 'send', icon: Send, label: 'Send' },
-      { id: 'audit', icon: Receipt, label: 'Audit' },
+  const pendingClaims = ledger.filter(tx => tx.status === 'PENDING_REVIEW');
+  const approvedClaims = ledger.filter(tx => tx.status === 'APPROVED');
+  const totalSpentThisMonth = approvedClaims.reduce((sum, tx) => sum + (Number(tx.amount_usd) || 0), 0);
+  const budgetBurnPercent = rules.monthly_budget > 0 
+      ? Math.min(100, Math.round((totalSpentThisMonth / rules.monthly_budget) * 100)) 
+      : 0;
+
+  const managerTabs = [
+      { id: 'approvals', icon: ShieldAlert, label: 'Approvals', badge: pendingClaims.length },
+      { id: 'send', icon: Send, label: 'Direct Payout' },
       { id: 'ledger', icon: LayoutGrid, label: 'Ledger' },
-      { id: 'activity', icon: Clock, label: 'Activity' },
-      { id: 'profile', icon: User, label: 'Profile' },
+      { id: 'activity', icon: Clock, label: 'Audit Trail' },
+      { id: 'profile', icon: Sliders, label: 'Governance' },
   ];
+
+  const employeeTabs = [
+      { id: 'audit', icon: Receipt, label: 'Claim Expense' },
+      { id: 'ledger', icon: LayoutGrid, label: 'My Claims' },
+      { id: 'activity', icon: Sparkles, label: 'AI Auditor' },
+  ];
+
+  const currentTabs = userRole === 'manager' ? managerTabs : employeeTabs;
+
+  const displayedLedger = ledger.filter(tx => {
+      if (userRole === 'manager') {
+          if (ledgerFilter === 'pending') return tx.status === 'PENDING_REVIEW';
+          if (ledgerFilter === 'approved') return tx.status === 'APPROVED';
+          if (ledgerFilter === 'rejected') return tx.status === 'REJECTED';
+      }
+      return true;
+  });
 
   return (
     <div className="min-h-screen bg-folio-bg folio-glow relative text-zinc-300 font-outfit overflow-hidden">
@@ -415,10 +496,70 @@ function App() {
                       </div>
 
                       {/* Network / Wallet Dropdown & Disconnect */}
-                      <div className="flex items-center gap-3">
-                          <button className="bg-folio-card border border-folio-border text-white text-sm font-medium px-4 py-2 rounded-full flex items-center gap-2 hover:bg-slate-800 transition-colors">
-                              <div className="w-3 h-3 bg-blue-500 rounded-full" /> Base Sepolia <span className="text-slate-400 text-xs ml-1">(ETH)</span> <ChevronDown size={14} className="text-slate-400" />
-                          </button>
+                      <div className="flex items-center gap-3 relative">
+                          {/* Role Switcher Pill */}
+                          <div className="flex items-center bg-slate-950/80 border border-slate-800 p-1 rounded-full text-xs font-mono">
+                              <button 
+                                  onClick={() => {
+                                      setUserRole('manager');
+                                      sessionStorage.setItem('userRole', 'manager');
+                                      setActiveTab('approvals');
+                                  }}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all cursor-pointer ${userRole === 'manager' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-bold shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'text-slate-400 hover:text-white'}`}
+                                  title="Switch to Executive Manager Portal"
+                              >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${userRole === 'manager' ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+                                  Manager
+                              </button>
+                              <button 
+                                  onClick={() => {
+                                      setUserRole('employee');
+                                      sessionStorage.setItem('userRole', 'employee');
+                                      setActiveTab('audit');
+                                  }}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all cursor-pointer ${userRole === 'employee' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'text-slate-400 hover:text-white'}`}
+                                  title="Switch to Employee Expense Hub"
+                              >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${userRole === 'employee' ? 'bg-amber-400' : 'bg-slate-600'}`} />
+                                  Employee
+                              </button>
+                          </div>
+
+                          <div className="relative">
+                              <button 
+                                  onClick={() => setIsNetworkDropdownOpen(!isNetworkDropdownOpen)}
+                                  className="bg-folio-card border border-folio-border text-white text-sm font-medium px-4 py-2 rounded-full flex items-center gap-2 hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                  <div className="w-3 h-3 bg-blue-500 rounded-full" /> Base Sepolia <span className="text-slate-400 text-xs ml-1">(ETH)</span> <ChevronDown size={14} className={`text-slate-400 transition-transform ${isNetworkDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isNetworkDropdownOpen && (
+                                  <div className="absolute right-0 mt-2 w-56 bg-slate-950 border border-slate-800 rounded-xl shadow-2xl p-2 z-50 text-xs font-mono">
+                                      <div className="px-3 py-1.5 text-[10px] text-slate-500 uppercase tracking-wider font-bold">Connected Network</div>
+                                      <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-blue-500/10 text-white font-medium">
+                                          <div className="flex items-center gap-2">
+                                              <span className="w-2 h-2 rounded-full bg-blue-500" />
+                                              <span>Base Sepolia</span>
+                                          </div>
+                                          <span className="text-[10px] text-emerald-400 font-bold">Active</span>
+                                      </div>
+                                      <div className="px-3 py-2 text-slate-500 flex items-center justify-between opacity-60">
+                                          <div className="flex items-center gap-2">
+                                              <span className="w-2 h-2 rounded-full bg-slate-600" />
+                                              <span>Base Mainnet</span>
+                                          </div>
+                                          <span className="text-[9px]">Live Soon</span>
+                                      </div>
+                                      <div className="px-3 py-2 text-slate-500 flex items-center justify-between opacity-60">
+                                          <div className="flex items-center gap-2">
+                                              <span className="w-2 h-2 rounded-full bg-slate-600" />
+                                              <span>Arbitrum Sepolia</span>
+                                          </div>
+                                          <span className="text-[9px]">Testnet</span>
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
                           <button 
                               onClick={handleSignOut}
                               className="bg-red-500/10 border border-red-500/20 text-red-400 hover:text-white hover:bg-red-500 hover:border-red-500 p-2.5 rounded-lg transition-all"
@@ -429,53 +570,276 @@ function App() {
                       </div>
                   </div>
 
-                  {/* Main Central Wallet Container */}
-                  <div className="w-full max-w-[600px] flex flex-col items-center px-4">
+                  {/* Main Central Wallet / Executive Container */}
+                  <div className={`w-full ${userRole === 'manager' ? 'max-w-4xl' : 'max-w-[620px]'} flex flex-col items-center px-4 transition-all duration-300`}>
                       
-                      {/* Navigation Tabs (Square Buttons) */}
-                      <div className="flex justify-center gap-3 mb-8 w-full overflow-x-auto hide-scrollbar py-2">
-                          {tabs.filter(tab => {
-                              if (userRole === 'manager') {
-                                  return tab.id !== 'audit';
-                              } else {
-                                  return tab.id !== 'send' && tab.id !== 'profile';
-                              }
-                          }).map((tab) => {
+                      {/* Executive Header & Stats for Manager OR Allowance Banner for Employee */}
+                      {userRole === 'manager' ? (
+                        <div className="w-full mb-6">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                            <div>
+                              <h2 className="text-xl font-space font-bold text-white">
+                                {rules.company_name || 'Corporate Treasury'} Vault
+                              </h2>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
+                                Workspace: <span className="text-white font-semibold">{workspaceId || 'Default'}</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* 3 Executive Metric Cards */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                            {/* Card 1: Vault Balances */}
+                            <div className="bg-folio-card border border-folio-border rounded-xl p-4.5 flex flex-col justify-between">
+                              <div className="flex items-center justify-between text-slate-400 text-xs font-mono mb-2">
+                                <span>TREASURY RESERVE</span>
+                                <span className="flex items-center gap-1.5 text-emerald-400 text-[10px]">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                                </span>
+                              </div>
+                              <div>
+                                <div className="text-2xl font-bold text-white font-space tracking-tight">
+                                  ${balances.usdc ? balances.usdc.toFixed(2) : '0.00'} <span className="text-xs font-normal text-slate-400 font-mono">USDC</span>
+                                </div>
+                                <div className="text-xs text-slate-400 font-mono mt-1 flex items-center justify-between">
+                                  <span>Gas: {balances.eth ? balances.eth.toFixed(4) : '0.0000'} ETH</span>
+                                  <button onClick={fetchBalances} className="text-folio-brand hover:underline text-[10px]">Refresh</button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card 2: Monthly Budget Burn */}
+                            <div className="bg-folio-card border border-folio-border rounded-xl p-4.5 flex flex-col justify-between">
+                              <div className="flex items-center justify-between text-slate-400 text-xs font-mono mb-2">
+                                <span>BUDGET BURN</span>
+                                <span className={`text-[11px] font-bold ${budgetBurnPercent > 85 ? 'text-rose-400' : 'text-folio-brand'}`}>
+                                  {budgetBurnPercent}% Used
+                                </span>
+                              </div>
+                              <div>
+                                <div className="flex items-baseline justify-between text-sm mb-1.5">
+                                  <span className="text-lg font-bold text-white font-space">${totalSpentThisMonth.toFixed(2)}</span>
+                                  <span className="text-xs text-slate-400 font-mono">Limit: ${rules.monthly_budget || 2000}</span>
+                                </div>
+                                <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-500 ${budgetBurnPercent > 85 ? 'bg-rose-500 shadow-[0_0_10px_#f43f5e]' : 'bg-folio-brand shadow-[0_0_10px_#22d3ee]'}`}
+                                    style={{ width: `${budgetBurnPercent}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card 3: Action Required / Approvals */}
+                            <div 
+                              onClick={() => setActiveTab('approvals')}
+                              className={`border rounded-xl p-4.5 cursor-pointer transition-all flex flex-col justify-between ${
+                                pendingClaims.length > 0 
+                                  ? 'bg-amber-500/10 border-amber-500/40 hover:border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.1)]' 
+                                  : 'bg-folio-card border-folio-border hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-slate-400 text-xs font-mono mb-2">
+                                <span>PENDING ACTIONS</span>
+                                <ShieldAlert size={16} className={pendingClaims.length > 0 ? 'text-amber-400 animate-bounce' : 'text-slate-500'} />
+                              </div>
+                              <div>
+                                <div className="flex items-baseline justify-between">
+                                  <div className="text-2xl font-bold text-white font-space">
+                                    {pendingClaims.length} <span className="text-xs font-normal text-slate-400 font-outfit">claim{pendingClaims.length === 1 ? '' : 's'}</span>
+                                  </div>
+                                  <span className="text-xs text-folio-brand hover:underline font-mono">Review &rarr;</span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 mt-1">
+                                  {pendingClaims.length > 0 ? 'Awaiting executive sign-off' : 'All claims processed'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Employee Allowance & Policy Card */
+                        <div className="w-full mb-6 bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-slate-900/90 border border-folio-border rounded-xl p-5 shadow-lg">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">Employee Expense Hub</span>
+                              </div>
+                              <h2 className="text-lg font-bold text-white mt-1">
+                                Welcome, <span className="text-folio-brand">{userName || 'Team Member'}</span>
+                              </h2>
+                              <p className="text-xs text-slate-400 mt-0.5">Submit business receipts for automated audit and instant treasury reimbursement.</p>
+                            </div>
+                            <div className="flex items-center gap-3 bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono">
+                              <div className="text-right">
+                                <div className="text-[10px] text-slate-500 uppercase">Auto-Settle Cap</div>
+                                <div className="text-emerald-400 font-bold">&le; $50.00</div>
+                              </div>
+                              <div className="w-px h-6 bg-slate-800" />
+                              <div>
+                                <div className="text-[10px] text-slate-500 uppercase">Policy Limit</div>
+                                <div className="text-folio-brand font-bold">${rules.max_claim_limit || 500}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Navigation Tabs (Distinct for Manager vs Employee) */}
+                      <div className="flex justify-center gap-3 mb-6 w-full overflow-x-auto hide-scrollbar py-2">
+                          {currentTabs.map((tab) => {
                               const isActive = activeTab === tab.id;
                               const Icon = tab.icon;
                               return (
                                   <button
                                       key={tab.id}
                                       onClick={() => setActiveTab(tab.id)}
-                                      className={`flex flex-col items-center justify-center gap-2 w-20 h-20 rounded-xl transition-all duration-300 ${isActive ? 'bg-folio-brand text-folio-bg' : 'bg-folio-card border border-folio-border text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                                      className={`relative flex flex-col items-center justify-center gap-2 w-24 h-20 rounded-xl transition-all duration-300 cursor-pointer ${isActive ? 'bg-folio-brand text-folio-bg shadow-[0_0_15px_rgba(34,211,238,0.25)]' : 'bg-folio-card border border-folio-border text-slate-400 hover:text-white hover:bg-slate-800'}`}
                                   >
+                                      {tab.badge > 0 && (
+                                          <span className="absolute -top-1.5 -right-1.5 bg-amber-500 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-black animate-pulse shadow-sm">
+                                              {tab.badge}
+                                          </span>
+                                      )}
                                       <Icon size={20} className={isActive ? 'text-folio-bg' : ''} />
-                                      <span className="text-xs font-medium font-outfit">{tab.label}</span>
+                                      <span className="text-xs font-medium font-outfit whitespace-nowrap">{tab.label}</span>
                                   </button>
                               )
                           })}
                       </div>
 
-                      {/* Top Message Box */}
-                      <div className="w-full bg-folio-accent/10 border border-folio-border rounded-lg py-4 mb-8 px-6 flex justify-between items-center text-folio-accent font-medium text-sm">
+                      {/* Status Banner */}
+                      <div className="w-full bg-folio-accent/10 border border-folio-border rounded-lg py-3 mb-6 px-5 flex justify-between items-center text-folio-accent font-medium text-xs sm:text-sm">
                           <span>Autonomous treasury powered by Agentic AI</span>
                           <span className="font-mono text-[11px] opacity-90 border-l border-folio-accent/30 pl-4 whitespace-nowrap flex items-center gap-1.5">
                               <span className={`w-2 h-2 rounded-full ${userRole === 'manager' ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]' : 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'}`} />
-                              {userRole === 'manager' ? 'MANAGER PORTAL' : `EMPLOYEE: ${userName || 'Employee'}`}
+                              {userRole === 'manager' ? 'ROLE: EXECUTIVE MANAGER' : `ROLE: EMPLOYEE (${userName || 'MEMBER'})`}
                           </span>
                       </div>
 
                       {/* Tab Content */}
                       <div className="w-full">
                           <AnimatePresence mode="wait">
+                              {/* Manager Approvals Review Queue Tab */}
+                              {activeTab === 'approvals' && (
+                                  <motion.div 
+                                      key="approvals"
+                                      initial={{ opacity: 0, y: 10 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      exit={{ opacity: 0, y: -10 }}
+                                      className="space-y-4 w-full"
+                                  >
+                                      <div className="flex items-center justify-between px-1 pb-1">
+                                          <div>
+                                              <h3 className="text-white font-medium text-base">Manager Review Queue</h3>
+                                              <p className="text-xs text-slate-400">Claims exceeding autonomous limits awaiting executive sign-off</p>
+                                          </div>
+                                          <span className="text-xs font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full flex items-center gap-1.5">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                              {pendingClaims.length} Pending
+                                          </span>
+                                      </div>
+
+                                      {pendingClaims.length === 0 ? (
+                                          <div className="text-center py-16 bg-folio-card border border-folio-border rounded-xl p-8 flex flex-col items-center justify-center">
+                                              <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400 mb-4 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+                                                  <CheckCircle2 size={28} />
+                                              </div>
+                                              <h4 className="text-white font-medium text-lg">All Claims Processed</h4>
+                                              <p className="text-sm text-slate-400 mt-1 max-w-sm">No claims are currently awaiting manual approval. The AI Agent automatically settles compliant claims below policy limits.</p>
+                                          </div>
+                                      ) : (
+                                          <div className="space-y-3">
+                                              {pendingClaims.map((tx, idx) => (
+                                                  <div 
+                                                      key={idx}
+                                                      className="w-full bg-folio-card border border-amber-500/30 rounded-xl p-5 hover:border-amber-500/50 transition-all flex flex-col gap-4 shadow-sm"
+                                                  >
+                                                      <div className="flex items-start justify-between">
+                                                          <div className="flex items-start gap-4">
+                                                              <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400 flex-shrink-0">
+                                                                  <Receipt size={22} />
+                                                              </div>
+                                                              <div>
+                                                                  <div className="flex items-center gap-2">
+                                                                      <h4 className="text-white font-semibold text-base">{tx.vendor || 'Unknown Vendor'}</h4>
+                                                                      <span className="text-[10px] font-mono uppercase bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                                                                          {tx.category || 'General'}
+                                                                      </span>
+                                                                  </div>
+                                                                  <p className="text-xs text-slate-400 font-mono mt-1">Recipient: <span className="text-slate-300">{tx.recipient}</span></p>
+                                                                  <p className="text-[11px] text-slate-500 font-mono mt-0.5">{tx.timestamp}</p>
+                                                              </div>
+                                                          </div>
+                                                          <div className="text-right">
+                                                              <div className="text-xl font-bold text-white font-space">${tx.amount_usd}</div>
+                                                              <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                                                  Needs Sign-off
+                                                              </span>
+                                                          </div>
+                                                      </div>
+
+                                                      {tx.receipt_image && (
+                                                          <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 flex items-center justify-between">
+                                                              <div className="flex items-center gap-3">
+                                                                  <img 
+                                                                      src={tx.receipt_image.startsWith('/') ? `http://localhost:8000${tx.receipt_image}` : tx.receipt_image} 
+                                                                      alt="Receipt" 
+                                                                      className="w-10 h-10 object-cover rounded border border-slate-700" 
+                                                                  />
+                                                                  <div>
+                                                                      <span className="text-xs text-white font-medium block">Receipt Attached</span>
+                                                                      <span className="text-[10px] text-slate-400 font-mono">Audited by AI Agent</span>
+                                                                  </div>
+                                                              </div>
+                                                              <button 
+                                                                  onClick={() => { setSelectedTx(tx); setIsDrawerOpen(true); }}
+                                                                  className="text-xs text-folio-brand hover:underline font-mono cursor-pointer"
+                                                              >
+                                                                  View Full Receipt &rarr;
+                                                              </button>
+                                                          </div>
+                                                      )}
+
+                                                      <div className="flex gap-3 pt-2 border-t border-slate-800/70">
+                                                          <button 
+                                                              onClick={() => handleApproveClaim(tx.tx_id)}
+                                                              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] cursor-pointer"
+                                                          >
+                                                              <Check size={14} /> Approve & Settle
+                                                          </button>
+                                                          <button 
+                                                              onClick={() => handleRejectClaim(tx.tx_id)}
+                                                              className="flex-1 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:border-red-500/40 font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                                                          >
+                                                              <X size={14} /> Reject Claim
+                                                          </button>
+                                                      </div>
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      )}
+                                  </motion.div>
+                              )}
+
                               {activeTab === 'audit' && (
                                   <motion.div 
                                       key="audit"
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="space-y-6"
+                                      className="space-y-6 w-full max-w-xl mx-auto"
                                   >
+                                      {auditError && (
+                                          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs flex justify-between items-center font-outfit">
+                                              <span><strong className="font-bold">Audit Rejected:</strong> {auditError}</span>
+                                              <button onClick={() => setAuditError(null)} className="text-red-400 hover:text-white ml-3 text-xs font-mono">✕</button>
+                                          </div>
+                                      )}
+
                                       {/* Upload Field */}
                                       <div>
                                           <h3 className="text-white font-medium mb-3">Upload Receipt</h3>
@@ -538,7 +902,7 @@ function App() {
                                       <button 
                                           onClick={submitClaim}
                                           disabled={isScanning || !file || !recipient}
-                                          className={`w-full py-4 rounded-lg font-space font-bold text-lg tracking-wide transition-all mt-4 ${isScanning ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-folio-brand hover:bg-folio-brand/90 text-folio-bg'}`}
+                                          className={`w-full py-4 rounded-lg font-space font-bold text-lg tracking-wide transition-all mt-4 cursor-pointer ${isScanning ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-folio-brand hover:bg-folio-brand/90 text-folio-bg'}`}
                                       >
                                           {isScanning ? 'AUDITING...' : 'GENERATE PAYOUT'}
                                       </button>
@@ -551,16 +915,59 @@ function App() {
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="space-y-4 max-h-[500px] overflow-y-auto pr-1"
+                                      className="space-y-4 max-h-[550px] overflow-y-auto pr-1 w-full"
                                   >
-                                      {ledger.length === 0 ? (
-                                          <div className="text-center py-12 text-slate-500">No historic ledger activity.</div>
+                                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-1 pb-1">
+                                          <div className="flex items-center gap-2">
+                                              <span className="text-xs text-slate-400 font-mono">
+                                                  {userRole === 'manager' ? 'Enterprise Ledger' : 'My Expense Ledger'}: {displayedLedger.length} items
+                                              </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                              {userRole === 'manager' && (
+                                                  <div className="flex items-center bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 text-xs font-mono">
+                                                      <button 
+                                                          onClick={() => setLedgerFilter('all')}
+                                                          className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'all' ? 'bg-folio-brand text-folio-bg font-bold' : 'text-slate-400 hover:text-white'}`}
+                                                      >
+                                                          All ({ledger.length})
+                                                      </button>
+                                                      <button 
+                                                          onClick={() => setLedgerFilter('pending')}
+                                                          className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'pending' ? 'bg-amber-500 text-black font-bold' : 'text-slate-400 hover:text-white'}`}
+                                                      >
+                                                          Pending ({pendingClaims.length})
+                                                      </button>
+                                                      <button 
+                                                          onClick={() => setLedgerFilter('approved')}
+                                                          className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${ledgerFilter === 'approved' ? 'bg-emerald-500 text-black font-bold' : 'text-slate-400 hover:text-white'}`}
+                                                      >
+                                                          Approved ({approvedClaims.length})
+                                                      </button>
+                                                  </div>
+                                              )}
+                                              {ledger.length > 0 && (
+                                                  <button 
+                                                      onClick={exportLedgerToCSV}
+                                                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-900/80 border border-slate-800 hover:border-slate-700 px-3 py-1 rounded-lg transition-colors font-mono cursor-pointer"
+                                                      title="Export Ledger as CSV"
+                                                  >
+                                                      <Download size={12} /> Export CSV
+                                                  </button>
+                                              )}
+                                          </div>
+                                      </div>
+
+                                      {displayedLedger.length === 0 ? (
+                                          <div className="text-center py-12 text-slate-500 bg-folio-card border border-folio-border rounded-xl">
+                                              No matching transactions found.
+                                          </div>
                                       ) : (
-                                          ledger.map((tx, idx) => (
+                                          displayedLedger.map((tx, idx) => (
                                               <div 
                                                 key={idx} 
                                                 onClick={() => { setSelectedTx(tx); setIsDrawerOpen(true); }}
-                                                className="w-full bg-folio-card border border-folio-border rounded-xl p-4 hover:border-slate-550 transition-colors cursor-pointer group flex flex-col gap-3"
+                                                className="w-full bg-folio-card border border-folio-border rounded-xl p-4 hover:border-slate-600 transition-colors cursor-pointer group flex flex-col gap-3"
                                               >
                                                   <div className="flex items-center justify-between">
                                                       <div className="flex items-center gap-4">
@@ -573,7 +980,7 @@ function App() {
                                                           </div>
                                                       </div>
                                                       <div className="text-right">
-                                                          <h4 className="text-white font-medium">${tx.amount_usd}</h4>
+                                                          <h4 className="text-white font-medium font-space">${tx.amount_usd}</h4>
                                                           <p className={`text-xs mt-1 font-bold uppercase ${tx.status === 'APPROVED' ? 'text-emerald-400' : tx.status === 'PENDING_REVIEW' ? 'text-amber-400' : tx.status === 'REJECTED' ? 'text-red-400' : 'text-slate-500'}`}>
                                                               {tx.status}
                                                           </p>
@@ -584,13 +991,13 @@ function App() {
                                                       <div className="flex gap-2.5 pt-3 border-t border-slate-800/85" onClick={e => e.stopPropagation()}>
                                                           <button 
                                                               onClick={() => handleApproveClaim(tx.tx_id)}
-                                                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-md transition-colors"
+                                                              className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-md transition-colors cursor-pointer"
                                                           >
                                                               Approve
                                                           </button>
                                                           <button 
                                                               onClick={() => handleRejectClaim(tx.tx_id)}
-                                                              className="flex-1 py-1.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 hover:border-red-500/40 font-bold text-xs rounded-md transition-colors"
+                                                              className="flex-1 py-1.5 bg-red-650/10 hover:bg-red-650/20 text-red-500 border border-red-500/20 hover:border-red-500/40 font-bold text-xs rounded-md transition-colors cursor-pointer"
                                                           >
                                                               Reject
                                                           </button>
@@ -628,8 +1035,15 @@ function App() {
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="space-y-6"
+                                      className="w-full max-w-xl mx-auto space-y-6"
                                   >
+                                      {auditError && (
+                                          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3.5 rounded-xl text-xs flex justify-between items-center font-outfit">
+                                              <span><strong className="font-bold">Payout Rejected:</strong> {auditError}</span>
+                                              <button onClick={() => setAuditError(null)} className="text-red-400 hover:text-white ml-3 text-xs font-mono">✕</button>
+                                          </div>
+                                      )}
+
                                       {/* Merchant / Vendor Name */}
                                       <div>
                                           <h3 className="text-white font-medium mb-3">Merchant / Vendor Name</h3>
@@ -690,7 +1104,7 @@ function App() {
                                       <button 
                                           onClick={() => submitManualSend(sendRecipient, sendAmount, sendVendor, sendCategory)}
                                           disabled={isScanning || !sendRecipient || !sendAmount || !sendVendor}
-                                          className={`w-full py-4 rounded-lg font-space font-bold text-lg tracking-wide transition-all mt-4 ${isScanning ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-folio-brand hover:bg-folio-brand/90 text-folio-bg'}`}
+                                          className={`w-full py-4 rounded-lg font-space font-bold text-lg tracking-wide transition-all mt-4 cursor-pointer ${isScanning ? 'bg-slate-800 text-slate-500 cursor-wait' : 'bg-folio-brand hover:bg-folio-brand/90 text-folio-bg'}`}
                                       >
                                           {isScanning ? 'PROCESSING STREAM...' : 'SEND PAYMENT'}
                                       </button>
@@ -703,7 +1117,7 @@ function App() {
                                       initial={{ opacity: 0, y: 10 }}
                                       animate={{ opacity: 1, y: 0 }}
                                       exit={{ opacity: 0, y: -10 }}
-                                      className="space-y-6 max-h-[500px] overflow-y-auto pr-2 relative"
+                                      className="space-y-6 max-h-[500px] overflow-y-auto pr-2 relative w-full"
                                   >
                                       {ledger.length === 0 ? (
                                           <div className="text-center py-12 text-slate-500">No recent activity.</div>
@@ -746,7 +1160,7 @@ function App() {
                                                                       <p className="text-[11px] text-slate-400 font-mono mt-0.5">{tx.recipient}</p>
                                                                   </div>
                                                                   <div className="text-right">
-                                                                      <span className="text-sm font-bold text-white">${tx.amount_usd}</span>
+                                                                      <span className="text-sm font-bold text-white font-space">${tx.amount_usd}</span>
                                                                       <div className={`text-[10px] font-bold uppercase mt-1 ${textColor}`}>
                                                                           {tx.status}
                                                                       </div>
@@ -769,35 +1183,32 @@ function App() {
                           </AnimatePresence>
                       </div>
                       {/* Bottom AI Panels (Like NLP Copilot / Dashboard) */}
-                      {(activeTab === 'audit' || (activeTab === 'send' && userRole === 'manager')) ? (
+                      {(activeTab === 'audit' || (activeTab === 'send' && userRole === 'manager') || activeTab === 'approvals') ? (
                         <div className={`w-full grid gap-4 mt-12 ${userRole === 'manager' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
-                            <div className="bg-folio-card border border-folio-border rounded-xl p-5 relative overflow-hidden">
-                                <div className="flex items-center gap-2 mb-4 text-sm font-medium text-white">
-                                    <Sparkles size={16} className="text-folio-accent" /> AI Agent Activity
-                                </div>
-                                <div className="h-32 text-xs font-mono text-slate-400 overflow-y-auto hide-scrollbar">
-                                    {logs.length > 0 ? logs.map((l, i) => (
-                                        <div key={i} className="mb-2 opacity-80 leading-relaxed">{l}</div>
-                                    )) : (
-                                        <div className="text-slate-650 italic">Awaiting input...</div>
+                            <div className="bg-folio-card border border-folio-border rounded-xl p-5 relative overflow-hidden flex flex-col justify-between">
+                                <div className="flex items-center justify-between mb-2 text-sm font-medium text-white">
+                                    <span className="flex items-center gap-2"><Sparkles size={16} className="text-folio-accent" /> AI Agent Activity</span>
+                                    {logs.length > 0 && (
+                                        <button onClick={() => setLogs([])} className="text-[10px] text-slate-500 hover:text-white font-mono cursor-pointer">Clear</button>
                                     )}
                                 </div>
+                                <AiThoughtStudio logs={logs} className="h-32" />
                             </div>
                             
                             {userRole === 'manager' ? (
                                 <div className="bg-folio-card border border-folio-border rounded-xl p-5">
                                     <div className="flex justify-between items-center mb-4 text-sm font-medium text-white">
-                                        <span className="flex items-center gap-2"><Activity size={16} className="text-folio-accent" /> Treasury Stats</span>
-                                        <button onClick={fetchBalances} className="text-xs text-slate-500 hover:text-white">Refresh</button>
+                                        <span className="flex items-center gap-2"><Activity size={16} className="text-folio-accent" /> Treasury Quick Stats</span>
+                                        <button onClick={fetchBalances} className="text-xs text-slate-500 hover:text-white cursor-pointer">Refresh</button>
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="bg-folio-bg border border-folio-border rounded-lg p-3 flex flex-col justify-center items-center h-20">
                                             <p className="text-xs text-slate-400 mb-1">USDC Vault</p>
-                                            <p className="text-lg font-medium text-white">${balances.usdc.toFixed(2)}</p>
+                                            <p className="text-lg font-medium text-white font-space">${balances.usdc.toFixed(2)}</p>
                                         </div>
                                         <div className="bg-folio-bg border border-folio-border rounded-lg p-3 flex flex-col justify-center items-center h-20">
                                             <p className="text-xs text-slate-400 mb-1">Network ETH</p>
-                                            <p className="text-lg font-medium text-white">{balances.eth.toFixed(4)}</p>
+                                            <p className="text-lg font-medium text-white font-space">{balances.eth.toFixed(4)}</p>
                                         </div>
                                     </div>
                                 </div>

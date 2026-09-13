@@ -4,12 +4,12 @@ import { TextPlugin } from 'gsap/TextPlugin';
 
 gsap.registerPlugin(TextPlugin);
 
-export default function AiThoughtStudio({ logs }) {
+export default function AiThoughtStudio({ logs = [], className = "" }) {
   const bottomRef = useRef(null);
   const [displayedLogs, setDisplayedLogs] = useState([]);
 
   useEffect(() => {
-    if (logs.length > displayedLogs.length) {
+    if (logs.length !== displayedLogs.length) {
       setDisplayedLogs(logs);
     }
   }, [logs, displayedLogs]);
@@ -21,16 +21,15 @@ export default function AiThoughtStudio({ logs }) {
   }, [displayedLogs]);
 
   return (
-    <div className="glass rounded-xl p-4 h-64 overflow-y-auto font-space text-sm relative neon-border hide-scrollbar">
-      <div className="sticky top-0 bg-folio-dark/80 backdrop-blur pb-2 z-10 mb-2">
-         <span className="text-xs text-folio-neon/70 font-bold tracking-widest uppercase">
-           System_Terminal // AI.Auditor
-         </span>
-      </div>
+    <div className={`overflow-y-auto font-space text-xs relative hide-scrollbar ${className || "glass rounded-xl p-4 h-64 neon-border"}`}>
       <div className="flex flex-col gap-2">
-        {displayedLogs.map((log, i) => (
-           <LogLine key={i} text={log} />
-        ))}
+        {displayedLogs.length === 0 ? (
+            <div className="text-slate-600 font-mono italic">System ready. Awaiting input stream...</div>
+        ) : (
+            displayedLogs.map((log, i) => (
+                <LogLine key={i} text={log} />
+            ))
+        )}
         <div ref={bottomRef} />
       </div>
     </div>
@@ -41,16 +40,18 @@ function LogLine({ text }) {
     const lineRef = useRef(null);
     const cursorRef = useRef(null);
     
-    const isThought = text.startsWith("Thought:");
-    const isTool = text.startsWith("Tool Call:");
-    const isDecision = text.startsWith("Decision:");
-    const isSystem = text.startsWith("System:");
+    const isError = text.includes("FAILURE") || text.includes("failed") || text.includes("Error");
+    const isThought = text.startsWith("Thought:") || text.startsWith("[Audit]") || text.startsWith("[Policy]");
+    const isTool = text.startsWith("Tool Call:") || text.startsWith("[Ledger]") || text.startsWith("[OCR]") || text.startsWith("[Treasury]");
+    const isDecision = text.startsWith("Decision:") || text.startsWith("[Policy Check]") || text.includes("PASSED") || text.includes("successful");
+    const isSystem = text.startsWith("System:") || text.startsWith("[System");
     
-    let textColor = "text-gray-300";
-    if (isThought) textColor = "text-folio-purple";
-    if (isTool) textColor = "text-blue-400";
-    if (isDecision) textColor = "text-folio-neon";
-    if (isSystem) textColor = "text-gray-400 italic";
+    let textColor = "text-slate-300";
+    if (isError) textColor = "text-red-400 font-semibold";
+    else if (isDecision) textColor = "text-emerald-400 font-semibold";
+    else if (isThought) textColor = "text-purple-300";
+    else if (isTool) textColor = "text-sky-400";
+    else if (isSystem) textColor = "text-slate-500 italic";
 
     useEffect(() => {
         if (lineRef.current) {

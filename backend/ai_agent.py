@@ -157,7 +157,7 @@ class FolioAgent:
         """Tool: Execute transaction payout."""
         return self.treasury.execute_payout(recipient, amount)
 
-    async def audit_claim_stream(self, file_bytes: bytes, mime_type: str, recipient: str, category: str, manual_amount: float = None, manual_vendor: str = None) -> AsyncGenerator[str, None]:
+    async def audit_claim_stream(self, file_bytes: bytes, mime_type: str, recipient: str, category: str, manual_amount: float = None, manual_vendor: str = None, receipt_url: str = None) -> AsyncGenerator[str, None]:
         import uuid
         tx_id = str(uuid.uuid4())
         
@@ -256,17 +256,23 @@ class FolioAgent:
         
         # Validation checks
         if extracted_amount > rules['max_claim_limit']:
-            yield f"[Compliance] AUDIT FAILURE: Claim amount (${extracted_amount:.2f}) exceeds configured single claim limit of ${rules['max_claim_limit']:.2f}\n"
+            msg = f"Claim amount (${extracted_amount:.2f}) exceeds configured single claim limit of ${rules['max_claim_limit']:.2f}"
+            yield f"[Compliance] AUDIT FAILURE: {msg}\n"
+            yield f"AUDIT_FAILED|{json.dumps({'reason': msg, 'amount': extracted_amount, 'vendor': vendor_name})}\n"
             return
             
         if past_spend + extracted_amount > rules['monthly_budget']:
-            yield f"[Compliance] AUDIT FAILURE: Claim amount (${extracted_amount:.2f}) exceeds available monthly budget of ${rules['monthly_budget']:.2f}\n"
+            msg = f"Claim amount (${extracted_amount:.2f}) exceeds available monthly budget of ${rules['monthly_budget']:.2f} (Past Spend: ${past_spend:.2f})"
+            yield f"[Compliance] AUDIT FAILURE: {msg}\n"
+            yield f"AUDIT_FAILED|{json.dumps({'reason': msg, 'amount': extracted_amount, 'vendor': vendor_name})}\n"
             return
             
         # Normalize category checks (case-insensitive)
         allowed_lower = [c.lower() for c in rules.get('allowed_categories', [])]
         if category.lower() not in allowed_lower:
-            yield f"[Compliance] AUDIT FAILURE: Category '{category}' is not permitted by workspace policies\n"
+            msg = f"Category '{category}' is not permitted by workspace policies"
+            yield f"[Compliance] AUDIT FAILURE: {msg}\n"
+            yield f"AUDIT_FAILED|{json.dumps({'reason': msg, 'amount': extracted_amount, 'vendor': vendor_name})}\n"
             return
             
         # Check against auto_approve_threshold
@@ -285,7 +291,8 @@ class FolioAgent:
                 "status": "PENDING_REVIEW",
                 "tx_type": "web3_pending",
                 "tx_hash_or_ref": "PENDING_APPROVAL",
-                "explorer_link": ""
+                "explorer_link": "",
+                "receipt_image": receipt_url or ""
             }
             
             self.add_to_ledger(tx_record)
@@ -312,7 +319,8 @@ class FolioAgent:
                 "status": "APPROVED",
                 "tx_type": payout_res.get('type', 'web3'),
                 "tx_hash_or_ref": payout_res.get('tx_hash') or payout_res.get('reference_number') or payout_res.get('ref_no'),
-                "explorer_link": payout_res.get('explorer_link', payout_res.get('explorer_url', ''))
+                "explorer_link": payout_res.get('explorer_link', payout_res.get('explorer_url', '')),
+                "receipt_image": receipt_url or ""
             }
             
             self.add_to_ledger(tx_record)

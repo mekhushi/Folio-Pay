@@ -1,14 +1,21 @@
 
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { ArrowUpRight } from 'lucide-react';
+import { 
+    ArrowUpRight, BookOpen, Info, Shield, Zap, CheckCircle2, 
+    Building2, Cpu, FileSpreadsheet, ArrowRight, Layers, Receipt, Sparkles, Check, X
+} from 'lucide-react';
 import MuseumSection from './MuseumSection';
+import AboutUsPage from './AboutUsPage';
+import { useSmoothScroll } from '../hooks/useSmoothScroll';
 
 gsap.registerPlugin(ScrollTrigger);
 
 export default function LandingPage({ onEnter }) {
+    useSmoothScroll();
+
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [startRain, setStartRain] = useState(false);
     const [sweepNow, setSweepNow] = useState(false);
@@ -17,8 +24,43 @@ export default function LandingPage({ onEnter }) {
     const rainStartedRef = useRef(false);
     const shoveStartedRef = useRef(false);
 
-    // Connect Modal states
+    // Modals
     const [showConnectModal, setShowConnectModal] = useState(false);
+    const [showDocsModal, setShowDocsModal] = useState(false);
+    const [showAboutModal, setShowAboutModal] = useState(false);
+
+    // Lock background scroll and pause Lenis when menu or modals are open
+    useEffect(() => {
+        if (isMenuOpen || showConnectModal || showDocsModal || showAboutModal) {
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
+            window.__lenis?.stop();
+        } else {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            window.__lenis?.start();
+        }
+        return () => {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            window.__lenis?.start();
+        };
+    }, [isMenuOpen, showConnectModal, showDocsModal, showAboutModal]);
+
+    // Handle Escape key to close menu/modals
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setIsMenuOpen(false);
+                setShowConnectModal(false);
+                setShowDocsModal(false);
+                setShowAboutModal(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     const [connectTab, setConnectTab] = useState('manager'); // 'manager' | 'employee'
     const [wsIdInput, setWsIdInput] = useState('');
     const [privateKeyInput, setPrivateKeyInput] = useState('');
@@ -40,6 +82,7 @@ export default function LandingPage({ onEnter }) {
         try {
             const body = {
                 workspace_id: wsId,
+                role: connectTab,
                 private_key: connectTab === 'manager' ? privateKeyInput.trim() || null : null,
                 gemini_key: connectTab === 'manager' ? geminiKeyInput.trim() || null : null
             };
@@ -61,7 +104,7 @@ export default function LandingPage({ onEnter }) {
                     data.mode,
                     data.rules,
                     data.balances,
-                    data.role,
+                    connectTab,
                     connectTab === 'employee' ? employeeNameInput.trim() || 'Employee' : ''
                 );
             }
@@ -978,12 +1021,17 @@ export default function LandingPage({ onEnter }) {
                     </div>
 
                     {/* Premium Footer (Revealed at the very bottom) */}
-                    <footer className="absolute bottom-0 w-full p-8 flex justify-between items-end z-20 pointer-events-none mix-blend-difference text-white/50">
-                        <div className="font-mono text-[10px] tracking-widest">
+                    <footer className="absolute bottom-0 w-full p-8 flex flex-col sm:flex-row justify-between items-center sm:items-end gap-4 z-20 pointer-events-auto mix-blend-difference text-white/60">
+                        <div className="font-mono text-[10px] tracking-widest text-center sm:text-left">
                             <p>© 2026 FOLIO PAY LTD.</p>
                             <p>ALL SYSTEMS NOMINAL.</p>
                         </div>
-                        <div className="font-mono text-[10px] tracking-widest text-right">
+                        <div className="flex items-center gap-6 font-mono text-xs tracking-wider">
+                            <button onClick={() => setShowAboutModal(true)} className="hover:text-white transition-colors cursor-pointer">About Us</button>
+                            <button onClick={() => setShowDocsModal(true)} className="hover:text-white transition-colors cursor-pointer">Documentation</button>
+                            <button onClick={() => setShowConnectModal(true)} className="hover:text-white transition-colors cursor-pointer">Launch App</button>
+                        </div>
+                        <div className="font-mono text-[10px] tracking-widest text-center sm:text-right">
                             <p>DESIGNED FOR AGENTS</p>
                             <p>BASE SEPOLIA NETWORK</p>
                         </div>
@@ -991,31 +1039,64 @@ export default function LandingPage({ onEnter }) {
                 </section>
             </div>
 
-            {/* Menu Overlay (retained from previous) */}
+            {/* Menu Overlay */}
             <AnimatePresence>
                 {isMenuOpen && (
                     <motion.div
-                        className="fixed inset-0 z-50 bg-[#020202] flex flex-col justify-center p-14 lg:px-32"
+                        className="fixed inset-0 z-50 bg-[#020202]/95 backdrop-blur-2xl flex flex-col justify-between p-8 lg:p-14"
                         initial={{ opacity: 0, clipPath: "polygon(0 0, 100% 0, 100% 0, 0 0)" }}
-                        animate={{ opacity: 1, clipPath: "polygon(0 0, 100% 100%, 100% 100%, 0 100%)", transition: { duration: 0.8, ease: "power3.inOut" } }}
-                        exit={{ opacity: 0, clipPath: "polygon(0 100%, 100% 100%, 100% 100%, 0 100%)", transition: { duration: 0.6 } }}
+                        animate={{ opacity: 1, clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)", transition: { duration: 0.45, ease: "easeInOut" } }}
+                        exit={{ opacity: 0, clipPath: "polygon(0 0, 100% 0, 100% 0, 0 0)", transition: { duration: 0.35, ease: "easeInOut" } }}
                     >
-                        <div className="absolute top-12 right-12">
-                            <button onClick={() => setIsMenuOpen(false)} className="text-xl font-space uppercase tracking-widest hover:text-folio-brand">Close [x]</button>
+                        {/* Top Bar inside Menu */}
+                        <div className="w-full flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <img src="/logo.png" className="w-8 h-8 object-contain invert brightness-200" alt="Folio Pay Logo" />
+                                <h1 className="text-xl font-space font-bold tracking-widest text-white">
+                                    FOLIO<br /><span className="text-[10px] tracking-[0.3em] font-normal text-white/70 leading-none block -mt-1">PAY</span>
+                                </h1>
+                            </div>
+                            <button 
+                                onClick={() => setIsMenuOpen(false)} 
+                                className="text-xs font-mono tracking-widest uppercase text-slate-300 hover:text-white transition-all bg-slate-900 border border-slate-800 hover:border-slate-700 px-4 py-2 rounded-full cursor-pointer flex items-center gap-2 shadow-lg"
+                            >
+                                <span>CLOSE</span> ✕
+                            </button>
                         </div>
-                        <div className="flex flex-col gap-4">
-                            {['Launch App', 'Documentation', 'About Us'].map((link, i) => (
+
+                        {/* Menu Links */}
+                        <div className="flex flex-col gap-6 my-auto max-w-5xl mx-auto w-full">
+                            {[
+                                { title: 'Launch App', sub: 'Open Workspace & Autonomous Treasury Agent', action: () => { setIsMenuOpen(false); setShowConnectModal(true); } },
+                                { title: 'Documentation', sub: 'Architecture, Smart Contracts & AI Audit Workflow', action: () => { setIsMenuOpen(false); setShowDocsModal(true); } },
+                                { title: 'About Us', sub: 'Autonomous Corporate Finance & Treasury Infrastructure', action: () => { setIsMenuOpen(false); setShowAboutModal(true); } }
+                            ].map((item, i) => (
                                 <motion.button
-                                    key={link}
-                                    initial={{ y: 50, opacity: 0 }}
-                                    animate={{ y: 0, opacity: 1, transition: { delay: 0.3 + (i * 0.1), duration: 0.8, ease: "power3.out" } }}
-                                    exit={{ y: -50, opacity: 0 }}
-                                    onClick={() => { if (link === 'Launch App') { setIsMenuOpen(false); setTimeout(() => setShowConnectModal(true), 800); } }}
-                                    className="text-6xl md:text-9xl font-space font-black tracking-tighter text-left text-slate-800 hover:text-white transition-colors uppercase"
+                                    key={item.title}
+                                    initial={{ y: 30, opacity: 0 }}
+                                    animate={{ y: 0, opacity: 1, transition: { delay: 0.15 + (i * 0.08), duration: 0.4 } }}
+                                    exit={{ y: -20, opacity: 0 }}
+                                    onClick={item.action}
+                                    className="text-left group cursor-pointer border-b border-white/5 pb-4 hover:border-folio-brand/30 transition-colors w-full"
                                 >
-                                    {link}
+                                    <div className="flex items-baseline justify-between">
+                                        <span className="text-4xl md:text-7xl font-space font-black tracking-tighter text-slate-300 group-hover:text-white transition-colors uppercase flex items-center gap-4">
+                                            {item.title}
+                                            <ArrowUpRight size={32} className="opacity-0 group-hover:opacity-100 text-folio-brand transition-all transform group-hover:translate-x-1 group-hover:-translate-y-1 hidden md:inline-block" />
+                                        </span>
+                                        <span className="text-xs font-mono text-slate-500 uppercase tracking-widest hidden sm:inline-block">0{i+1}</span>
+                                    </div>
+                                    <p className="text-xs font-mono text-slate-500 group-hover:text-folio-brand-muted transition-colors mt-1">
+                                        {item.sub}
+                                    </p>
                                 </motion.button>
                             ))}
+                        </div>
+
+                        {/* Bottom Footer inside Menu */}
+                        <div className="w-full flex justify-between items-center text-slate-500 text-[11px] font-mono border-t border-slate-900 pt-4">
+                            <span>AUTONOMOUS TREASURY PROTOCOL</span>
+                            <span className="text-folio-brand">BASE SEPOLIA TESTNET</span>
                         </div>
                     </motion.div>
                 )}
@@ -1139,6 +1220,92 @@ export default function LandingPage({ onEnter }) {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Documentation Modal */}
+            <AnimatePresence>
+                {showDocsModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md font-outfit"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.95, y: 20 }}
+                            className="w-full max-w-xl bg-[#0a0a0c] border border-slate-800 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(14,165,233,0.15)] relative p-6 text-zinc-300 max-h-[85vh] overflow-y-auto"
+                        >
+                            <button
+                                onClick={() => setShowDocsModal(false)}
+                                className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors text-sm font-space"
+                            >
+                                ✕
+                            </button>
+
+                            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800/80">
+                                <div className="w-9 h-9 rounded-xl bg-folio-brand/10 border border-folio-brand/20 flex items-center justify-center text-folio-brand">
+                                    <BookOpen size={18} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold font-space text-white tracking-wider">DOCUMENTATION & ARCHITECTURE</h2>
+                                    <p className="text-xs text-slate-400 font-mono">Folio Pay Autonomous Agent Protocol</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 text-xs leading-relaxed text-slate-300">
+                                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-850">
+                                    <h3 className="text-white font-semibold font-space text-sm mb-1 flex items-center gap-2">
+                                        <Zap size={14} className="text-folio-brand" /> 1. Multimodal OCR & Vision
+                                    </h3>
+                                    <p className="text-slate-400">
+                                        Uploaded receipt images are processed via Gemini Vision models to automatically extract the merchant name, currency, and total expenditure.
+                                    </p>
+                                </div>
+
+                                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-855">
+                                    <h3 className="text-white font-semibold font-space text-sm mb-1 flex items-center gap-2">
+                                        <Shield size={14} className="text-folio-accent" /> 2. Governance & Policy Validation
+                                    </h3>
+                                    <p className="text-slate-400">
+                                        The autonomous auditor audits cumulative monthly spending, single claim caps, and pre-authorized vendor categories. Over-limit claims are escalated to the Manager Approval Queue.
+                                    </p>
+                                </div>
+
+                                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-855">
+                                    <h3 className="text-white font-semibold font-space text-sm mb-1 flex items-center gap-2">
+                                        <CheckCircle2 size={14} className="text-emerald-400" /> 3. Instant Multi-Rail Settlement
+                                    </h3>
+                                    <p className="text-slate-400">
+                                        Approved claims immediately execute on Base Sepolia testnet via ERC-20 USDC contracts, or route to simulated UPI bank payouts with cryptographic reference hashes.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => { setShowDocsModal(false); setShowConnectModal(true); }}
+                                className="w-full mt-6 py-3 bg-folio-brand text-folio-bg font-space font-bold text-xs uppercase tracking-wider rounded-lg hover:bg-opacity-95 transition-all"
+                            >
+                                Open Workspace Portal
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* GSAP-Powered Cinematic About Us Page */}
+            <AboutUsPage 
+                isOpen={showAboutModal}
+                onClose={() => setShowAboutModal(false)}
+                onLaunchApp={() => {
+                    setShowAboutModal(false);
+                    setShowConnectModal(true);
+                }}
+                onOpenDocs={() => {
+                    setShowAboutModal(false);
+                    setShowDocsModal(true);
+                }}
+            />
 
         </div>
     );

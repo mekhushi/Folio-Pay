@@ -42,17 +42,25 @@ export default function ReceiptDrawer({ transaction, isOpen, onClose, userRole, 
                 </button>
             </div>
 
-            <div className="relative w-full h-96 bg-folio-dark rounded-xl overflow-hidden border border-white/10">
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 font-mono text-sm opacity-50 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
-                    [ Receipt Scan Image ]
-                </div>
+            <div className="relative w-full h-96 bg-folio-dark rounded-xl overflow-hidden border border-white/10 flex items-center justify-center">
+                {transaction?.receipt_image ? (
+                    <img 
+                        src={transaction.receipt_image.startsWith('http') ? transaction.receipt_image : `http://localhost:8000${transaction.receipt_image}`} 
+                        alt="Receipt Scan" 
+                        className="w-full h-full object-contain"
+                    />
+                ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 font-mono text-sm opacity-50 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+                        [ Receipt Scan Image ]
+                    </div>
+                )}
                 
                 {transaction && (
                     <>
-                    <div className="absolute top-1/4 left-1/4 w-1/2 h-10 border-2 border-folio-neon bg-folio-neon/10 rounded animate-pulse shadow-[0_0_10px_#00FFA3]">
+                    <div className="absolute top-1/4 left-1/4 w-1/2 h-10 border-2 border-folio-neon bg-folio-neon/10 rounded animate-pulse shadow-[0_0_10px_#00FFA3] pointer-events-none">
                         <span className="absolute -top-6 left-0 text-xs text-folio-neon font-bold">VENDOR: {transaction.vendor}</span>
                     </div>
-                    <div className="absolute top-1/2 left-1/3 w-1/3 h-10 border-2 border-folio-purple bg-folio-purple/10 rounded animate-pulse shadow-[0_0_10px_#9D4EDD]">
+                    <div className="absolute top-1/2 left-1/3 w-1/3 h-10 border-2 border-folio-purple bg-folio-purple/10 rounded animate-pulse shadow-[0_0_10px_#9D4EDD] pointer-events-none">
                         <span className="absolute -top-6 left-0 text-xs text-folio-purple font-bold">TOTAL: ${transaction.amount_usd}</span>
                     </div>
                     </>

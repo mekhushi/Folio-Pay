@@ -20,6 +20,9 @@ export function useSmoothScroll() {
       infinite: false,
     });
 
+    // Expose lenis globally for modal control
+    window.__lenis = lenis;
+
     // Update GSAP ScrollTrigger on Lenis scroll
     lenis.on('scroll', ScrollTrigger.update);
 
@@ -35,6 +38,7 @@ export function useSmoothScroll() {
       // Cleanup on unmount
       gsap.ticker.remove((time) => lenis.raf(time * 1000));
       lenis.destroy();
+      delete window.__lenis;
     };
   }, []);
 }
