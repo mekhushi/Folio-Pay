@@ -2,7 +2,7 @@
 
 Autonomous corporate treasury and instant expense reimbursement protocol powered by multimodal AI and programmable smart contract execution.
 
-![Folio Pay Hero](docs/assets/landing_hero.png)
+
 
 ---
 
@@ -16,7 +16,6 @@ Traditional expense reimbursement is fundamentally broken. Employees pay out-of-
 3. Policy rules (monthly limits, single-claim caps, category whitelists) evaluate the claim instantly.
 4. Approved claims under threshold ($50) disburse autonomously straight to the employee via **Base Sepolia USDC** or instant UPI transfers. Over-limit claims route to a rapid manager approval queue.
 
-![About Folio Pay](docs/assets/about_us.png)
 
 ---
 
