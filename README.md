@@ -7,7 +7,7 @@ Autonomous corporate treasury and instant expense reimbursement protocol powered
 ---
 
 ## Overview
-
+ 
 Traditional expense reimbursement is fundamentally broken. Employees pay out-of-pocket for company operations, collect paper receipts, and wait 14 to 45 business days for manual spreadsheet verification and payroll cycles.
 
 **Folio Pay replaces this bureaucracy with deterministic automation:**
