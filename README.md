@@ -17,7 +17,7 @@ Traditional expense reimbursement is fundamentally broken. Employees pay out-of-
 4. Approved claims under threshold ($50) disburse autonomously straight to the employee via **Base Sepolia USDC** or instant UPI transfers. Over-limit claims route to a rapid manager approval queue.
 
  
----
+--- 
  
 ## Execution Flowchart
 
