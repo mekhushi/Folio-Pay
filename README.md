@@ -46,16 +46,8 @@ flowchart TD
 
 ## Architecture & Tech Stack
 
-### Frontend
-- **Framework**: React 19 + Vite
-- **Styling**: Tailwind CSS v4 + Custom Glassmorphism
-- **Animations**: GSAP 3 (stagger timelines, counter tweens, 3D card tilt)
-- **Smooth Scroll**: Lenis + GSAP ScrollTrigger
-- **Icons**: Lucide React
-
 ### Backend
 - **Framework**: FastAPI (Python 3.9+)
-- **Multimodal AI**: Google Gemini 1.5 Pro / Flash Vision models
 - **Web3 Engine**: Web3.py on Base Sepolia testnet
 - **Storage**: Workspace-isolated ledger JSON stores and static receipt file storage
 
